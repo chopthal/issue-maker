@@ -1,2 +1,2 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "cmd /c ""C:\Software\issue-maker\scripts\run-bot.bat""", 0, False
+WshShell.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File ""C:\Software\issue-maker\scripts\tray-launcher.ps1""", 0, False
