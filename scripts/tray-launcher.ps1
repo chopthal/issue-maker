@@ -1,6 +1,16 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# 1. 중복 실행 방지 (Global Mutex)
+$mutexName = "Global\IssueMakerBot_SingleInstance_Mutex"
+$createdNew = $false
+$mutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$createdNew)
+
+if (-not $createdNew) {
+    # 이미 다른 트레이 인스턴스가 실행 중이면 조용히 종료
+    exit 0
+}
+
 $projectDir = "C:\Software\issue-maker"
 $logFile = Join-Path $projectDir "data\bot.log"
 $envFile = Join-Path $projectDir ".env"
@@ -13,17 +23,25 @@ function Start-Bot {
         return
     }
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "node.exe"
-    $psi.Arguments = "`"$nodeApp`""
-    $psi.WorkingDirectory = $projectDir
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
+    # 기존에 돌고 있을 수 있는 잔여 node.exe 프로세스 정리
+    Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*issue-maker\dist\index.js*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+    Start-Sleep -Milliseconds 500
 
     $dataDir = Join-Path $projectDir "data"
     if (-not (Test-Path $dataDir)) {
         New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
     }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    # cmd /c node dist\index.js >> data\bot.log 2>&1 형태로 로그 누적
+    $psi.Arguments = "/c node `"$nodeApp`" >> `"$logFile`" 2>&1"
+    $psi.WorkingDirectory = $projectDir
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
 
     $script:botProcess = [System.Diagnostics.Process]::Start($psi)
 
@@ -36,7 +54,7 @@ function Stop-Bot {
     if ($script:botProcess -and -not $script:botProcess.HasExited) {
         try {
             $script:botProcess.Kill()
-            $script:botProcess.WaitForExit(2000)
+            $script:botProcess.WaitForExit(1000)
         } catch {}
     }
     Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
@@ -99,6 +117,8 @@ $exitItem.add_Click({
     Stop-Bot
     $trayIcon.Visible = $false
     $trayIcon.Dispose()
+    $mutex.ReleaseMutex()
+    $mutex.Dispose()
     [System.Windows.Forms.Application]::Exit()
 })
 
