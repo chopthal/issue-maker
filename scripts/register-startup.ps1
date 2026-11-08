@@ -1,17 +1,20 @@
-# Issue-Maker 자동 시작 등록 스크립트 (Windows Run 레지스트리 단일 등록)
-$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+# Issue-Maker 자동 시작 등록 스크립트 (Startup 폴더 바로가기 방식)
 $taskName = "IssueMakerBot"
-$cmdValue = 'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Software\issue-maker\scripts\tray-launcher.ps1"'
-
-# 1. Windows Run 레지스트리에 단일 등록 (작업 관리자 시작 앱 목록에 표시)
-Set-ItemProperty -Path $regPath -Name $taskName -Value $cmdValue
-
-# 2. 혹시 남아있을 수 있는 Startup 폴더 내 중복 바로가기 정리 (중복 실행 원천 차단)
 $startupFolder = [System.Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupFolder "$taskName.lnk"
-if (Test-Path $shortcutPath) {
-    Remove-Item $shortcutPath -Force
-}
 
-Write-Host "✅ Issue-Maker가 Windows 시작프로그램(레지스트리 단일 항목)으로 등록되었습니다!" -ForegroundColor Green
-Write-Host "📍 레지스트리: $regPath -> $taskName"
+# 1. Run 레지스트리는 중복 실행 방지를 위해 확실히 삭제 (Startup 폴더 방식 하나로 통일)
+$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+Remove-ItemProperty -Path $regPath -Name $taskName -ErrorAction SilentlyContinue
+
+# 2. Startup 폴더에 pythonw 바로가기 생성
+$wshShell = New-Object -ComObject WScript.Shell
+$shortcut = $wshShell.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = "C:\Software\issue-maker\.venv\Scripts\pythonw.exe"
+$shortcut.Arguments = "`"C:\Software\issue-maker\scripts\tray_launcher.py`""
+$shortcut.WorkingDirectory = "C:\Software\issue-maker"
+$shortcut.Description = "Issue-Maker Tray Launcher"
+$shortcut.Save()
+
+Write-Host "✅ Issue-Maker가 Windows 시작프로그램에 단일 등록되었습니다!" -ForegroundColor Green
+Write-Host "📍 바로가기: $shortcutPath"
