@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+
+# Environment variables & secrets
+.env
+*.local
+
+# Local data & media caches
+data/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+*.log

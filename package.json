@@ -1,0 +1,26 @@
+{
+  "name": "issue-maker",
+  "version": "1.0.0",
+  "description": "Telegram bot to GitHub Issue pipeline with 2-stage AI workers (DeepSeek Flash & Cursor Auto)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test:pipeline": "tsx src/testRun.ts"
+  },
+  "keywords": ["telegram", "github-issues", "ai-agent", "opencode", "cursor"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^21.1.1",
+    "dotenv": "^16.4.7",
+    "grammy": "^1.35.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
