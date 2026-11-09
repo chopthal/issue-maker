@@ -31,6 +31,29 @@ def acquire_single_instance_mutex():
         # 이미 다른 트레이 인스턴스가 실행 중
         sys.exit(0)
 
+def truncate_log_if_needed(max_lines=2000):
+    try:
+        if not os.path.exists(LOG_FILE):
+            return
+        with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        if len(lines) > max_lines:
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                f.writelines(lines[-max_lines:])
+    except Exception:
+        pass
+
+def log_launcher(message):
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    formatted = f"[{now}] [LAUNCHER] {message}\n"
+    try:
+        os.makedirs(os.path.join(PROJECT_DIR, "data"), exist_ok=True)
+        truncate_log_if_needed(2000)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(formatted)
+    except Exception:
+        pass
+
 bot_process = None
 process_lock = threading.Lock()
 
@@ -60,21 +83,29 @@ def start_bot():
         except Exception:
             pass
 
-        os.makedirs(os.path.join(PROJECT_DIR, "data"), exist_ok=True)
-        log_fp = open(LOG_FILE, "a", encoding="utf-8")
+        if not os.path.exists(NODE_APP):
+            log_launcher(f"오류: {NODE_APP} 파일을 찾을 수 없습니다. npm run build를 먼저 실행해주세요.")
+            return
 
-        bot_process = subprocess.Popen(
-            ["node", NODE_APP],
-            cwd=PROJECT_DIR,
-            stdout=log_fp,
-            stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
+        log_launcher("Issue-Maker Bot 프로세스를 시작합니다...")
+        try:
+            bot_process = subprocess.Popen(
+                ["node", NODE_APP],
+                cwd=PROJECT_DIR,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            log_launcher(f"Issue-Maker Bot 프로세스가 시작되었습니다. (PID: {bot_process.pid})")
+        except Exception as e:
+            log_launcher(f"Issue-Maker Bot 프로세스 시작 실패: {e}")
 
 def stop_bot():
     global bot_process
     with process_lock:
         if bot_process:
+            pid = bot_process.pid
+            log_launcher(f"Issue-Maker Bot 프로세스를 중지합니다. (PID: {pid})")
             try:
                 bot_process.terminate()
                 bot_process.wait(timeout=2)
@@ -95,6 +126,7 @@ def stop_bot():
             pass
 
 def restart_bot(icon=None, item=None):
+    log_launcher("봇 재시작 요청을 수신했습니다.")
     stop_bot()
     time.sleep(1)
     start_bot()
@@ -113,6 +145,7 @@ def open_folder(icon=None, item=None):
     os.startfile(PROJECT_DIR)
 
 def on_exit(icon, item):
+    log_launcher("Issue-Maker 트레이 런처를 종료합니다.")
     stop_bot()
     icon.stop()
     if mutex_handle:
@@ -120,6 +153,7 @@ def on_exit(icon, item):
 
 def main():
     acquire_single_instance_mutex()
+    log_launcher("Issue-Maker 트레이 런처가 시작되었습니다.")
     start_bot()
 
     menu = pystray.Menu(

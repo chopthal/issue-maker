@@ -1,3 +1,8 @@
+import { logger } from "./utils/logger.js";
+
+// 콘솔 출력 및 파일 로깅에 타임스탬프와 롤링 버퍼 적용
+logger.hookGlobalConsole();
+
 import { Bot } from "grammy";
 import { config } from "./config.js";
 import { registerHandlers } from "./bot/handlers.js";
