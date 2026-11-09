@@ -42,6 +42,7 @@ export async function runAgy(
     args.push("-p", prompt);
 
     const child: ChildProcessWithoutNullStreams = spawn(agyBin, args, {
+      cwd: os.tmpdir(),
       shell: false,
       windowsHide: true,
       env: { ...process.env },

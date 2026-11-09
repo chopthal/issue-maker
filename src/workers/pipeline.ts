@@ -49,7 +49,7 @@ export async function runSynthesisPipeline(
     `[정제할 대화 내용 원본]\n${rawConversation}` +
     `${imageSection}\n\n` +
     `위 대화를 분석하여 양식에 맞추어 완성형 GitHub Issue를 작성해주세요. ` +
-    `반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 제목을 포함해야 합니다.`;
+    `사전 계획 설명이나 진행 여부 질문을 하지 말고, 반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 시작하여 본문 전체를 원샷으로 완성하여 출력해야 합니다.`;
 
   const rawOutput = await runAgy(
     fullPrompt,
