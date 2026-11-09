@@ -14,7 +14,8 @@ function getAgyExecutablePath(): string {
 export async function runAgy(
   prompt: string,
   model = "gemini-3.8-flash-low",
-  mode: "plan" | "auto" = "plan"
+  mode: "plan" | "auto" = "plan",
+  effort: "low" | "medium" | "high" | "xhigh" | "max" = "low"
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const agyBin = getAgyExecutablePath();
@@ -23,6 +24,7 @@ export async function runAgy(
     const args = [
       `--model=${model}`,
       `--mode=${mode}`,
+      `--effort=${effort}`,
       "--dangerously-skip-permissions",
       "-p",
       prompt,

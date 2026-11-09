@@ -1,22 +1,32 @@
-import { Bot, Context } from "grammy";
+import { Bot, Context, InlineKeyboard } from "grammy";
 import path from "node:path";
 import fs from "node:fs";
 import { store, ChatMessage } from "../storage/db.js";
+import { settingsManager, RuntimeWorkerSettings, SettingsManager } from "../storage/settings.js";
 import { runSynthesisPipeline } from "../workers/pipeline.js";
 import { createGitHubIssue } from "../github/issueCreator.js";
-import { config } from "../config.js";
+import { config, WorkerEngine } from "../config.js";
 
 export function registerHandlers(bot: Bot) {
   // 1. 도움말
   bot.command(["start", "help", "도움말"], async (ctx) => {
+    const s = settingsManager.getSettings();
     await ctx.reply(
       `👋 **Issue-Maker 봇에 오신 것을 환영합니다!**\n\n` +
-        `기획자와 개발자가 편하게 대화를 나누시면, AI 워커(DeepSeek Flash + Cursor Auto)가 개발 가능한 GitHub Issue로 자동 정리해 드립니다.\n\n` +
-        `📌 **사용 방법**:\n` +
-        `• \`/정리\` 또는 대화 중 "여기까지 정리": 직전 정리 시점(체크포인트) 이후의 대화를 자동 정리\n` +
-        `• **특정 메시지에 답장으로 \`/정리\`**: 해당 메시지부터 현재까지 지정 구간 정리\n` +
-        `• \`/체크포인트\`: 현재 워터마크 상태 확인\n` +
-        `• \`/체크포인트초기화\`: 워터마크를 처음으로 리셋`,
+        `기획자와 개발자가 편하게 대화를 나누시면, AI 워커가 개발 가능한 GitHub Issue로 자동 정리해 드립니다.\n\n` +
+        `⚙️ **현재 AI 설정**:\n` +
+        `• 공급사: \`${s.engine.toUpperCase()}\` | 모델: \`${s.model}\` | Effort: \`${s.effort}\`\n\n` +
+        `📌 **대화 정리 명령어**:\n` +
+        `• \`/정리\` 또는 \`여기까지 정리\`: 직전 정리 시점(체크포인트) 이후 대화 정리\n` +
+        `• **(답장으로) \`/정리\`**: 해당 메시지부터 현재까지 지정 구간 정리\n` +
+        `• \`/체크포인트\`: 현재 워터마크 확인\n` +
+        `• \`/체크포인트초기화\`: 워터마크 초기화\n\n` +
+        `🛠️ **LLM 설정 변경 (실시간)**:\n` +
+        `• \`/설정\` : 버튼 메뉴로 공급사/모델/effort 변경\n` +
+        `• \`/엔진 agy|cursor|openai\` : 공급사 즉시 변경\n` +
+        `• \`/모델 <모델명>\` : 모델명 직접 변경\n` +
+        `• \`/effort low|medium|high|max\` : 추론 강도 변경\n` +
+        `• \`/모드 plan|auto\` : 실행 모드 변경`,
       { parse_mode: "Markdown" }
     );
   });
@@ -32,7 +42,116 @@ export function registerHandlers(bot: Bot) {
     await ctx.reply("🔄 체크포인트가 초기화되었습니다. 다음 /정리 시 전체 대화가 대상이 됩니다.");
   });
 
-  // 3. 정리 트리거 핸들러 (/정리, /summary, 또는 텍스트 내 트리거 감지)
+  // 3. LLM 설정 인터랙티브 패널 (/설정, /settings, /config)
+  bot.command(["설정", "settings", "config"], async (ctx) => {
+    await sendSettingsMenu(ctx);
+  });
+
+  // 4. 빠른 텍스트 명령어 지원
+  bot.command(["엔진", "공급사", "engine", "provider"], async (ctx) => {
+    const target = ctx.match?.trim().toLowerCase();
+    if (target === "agy" || target === "cursor" || target === "openai") {
+      const updated = settingsManager.setEngine(target as WorkerEngine);
+      await ctx.reply(
+        `✅ 공급사가 **[${updated.engine.toUpperCase()}]**로 변경되었습니다!\n• 모델: \`${updated.model}\`\n• Effort: \`${updated.effort}\``,
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      await ctx.reply("⚠️ 사용법: `/엔진 agy` 또는 `/엔진 cursor` 또는 `/엔진 openai`", {
+        parse_mode: "Markdown",
+      });
+    }
+  });
+
+  bot.command(["모델", "model"], async (ctx) => {
+    const model = ctx.match?.trim();
+    if (model) {
+      const updated = settingsManager.setModel(model);
+      await ctx.reply(`✅ 모델이 **\`${updated.model}\`**로 변경되었습니다. (공급사: ${updated.engine.toUpperCase()})`, {
+        parse_mode: "Markdown",
+      });
+    } else {
+      const current = settingsManager.getSettings();
+      const presets = SettingsManager.PRESETS[current.engine].models.join("\n• ");
+      await ctx.reply(
+        `📌 현재 모델: \`${current.model}\` (공급사: ${current.engine.toUpperCase()})\n\n` +
+          `💡 **추천 모델 목록**:\n• ${presets}\n\n` +
+          `변경하려면: \`/모델 <원하는모델명>\` 입력`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  bot.command(["effort", "노력"], async (ctx) => {
+    const effort = ctx.match?.trim().toLowerCase();
+    const valid = ["low", "medium", "high", "xhigh", "max"];
+    if (effort && valid.includes(effort)) {
+      const updated = settingsManager.setEffort(effort as any);
+      await ctx.reply(`✅ Effort(추론 강도)가 **\`${updated.effort}\`**로 설정되었습니다.`, {
+        parse_mode: "Markdown",
+      });
+    } else {
+      await ctx.reply("⚠️ 사용법: `/effort low` | `medium` | `high` | `max`", {
+        parse_mode: "Markdown",
+      });
+    }
+  });
+
+  bot.command(["모드", "mode"], async (ctx) => {
+    const mode = ctx.match?.trim().toLowerCase();
+    if (mode === "plan" || mode === "auto") {
+      const updated = settingsManager.setMode(mode as any);
+      await ctx.reply(`✅ 모드가 **\`${updated.mode}\`**로 설정되었습니다.`, {
+        parse_mode: "Markdown",
+      });
+    } else {
+      await ctx.reply("⚠️ 사용법: `/모드 plan` 또는 `/모드 auto`", {
+        parse_mode: "Markdown",
+      });
+    }
+  });
+
+  // 5. 인라인 키보드 콜백 쿼리 처리
+  bot.callbackQuery(/^set_engine:(.+)$/, async (ctx) => {
+    const engine = ctx.match[1] as WorkerEngine;
+    settingsManager.setEngine(engine);
+    await ctx.answerCallbackQuery({ text: `공급사가 ${engine.toUpperCase()}로 변경되었습니다.` });
+    await editSettingsMenu(ctx);
+  });
+
+  bot.callbackQuery(/^set_model:(.+)$/, async (ctx) => {
+    const model = ctx.match[1];
+    settingsManager.setModel(model);
+    await ctx.answerCallbackQuery({ text: `모델이 ${model}로 변경되었습니다.` });
+    await editSettingsMenu(ctx);
+  });
+
+  bot.callbackQuery(/^set_effort:(.+)$/, async (ctx) => {
+    const effort = ctx.match[1] as any;
+    settingsManager.setEffort(effort);
+    await ctx.answerCallbackQuery({ text: `Effort가 ${effort}로 변경되었습니다.` });
+    await editSettingsMenu(ctx);
+  });
+
+  bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
+    const view = ctx.match[1];
+    if (view === "main") {
+      await editSettingsMenu(ctx);
+    } else if (view === "engine") {
+      await showEngineSubmenu(ctx);
+    } else if (view === "model") {
+      await showModelSubmenu(ctx);
+    } else if (view === "effort") {
+      await showEffortSubmenu(ctx);
+    }
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery("close_menu", async (ctx) => {
+    await ctx.deleteMessage();
+  });
+
+  // 6. 정리 트리거 핸들러 (/정리, /summary, 또는 텍스트 내 트리거 감지)
   const triggerWords = ["/정리", "/summary", "여기까지 정리", "여기까지정리"];
 
   bot.on("message:text", async (ctx, next) => {
@@ -49,7 +168,7 @@ export function registerHandlers(bot: Bot) {
     await next();
   });
 
-  // 4. 미디어 메시지 수신 (사진, 문서 등)
+  // 7. 미디어 메시지 수신 (사진, 문서 등)
   bot.on(["message:photo", "message:document", "message:voice"], async (ctx, next) => {
     const caption = ctx.message.caption || "";
     const isTrigger = triggerWords.some((w) => caption.startsWith(w) || caption === w);
@@ -64,6 +183,106 @@ export function registerHandlers(bot: Bot) {
   });
 }
 
+function getSettingsText(s: RuntimeWorkerSettings): string {
+  return (
+    `⚙️ **Issue-Maker AI 파이프라인 설정**\n\n` +
+    `• **공급사 (Engine)**: \`${s.engine.toUpperCase()}\`\n` +
+    `• **모델 (Model)**: \`${s.model}\`\n` +
+    `• **Effort (추론 강도)**: \`${s.effort}\`\n` +
+    `• **실행 모드 (Mode)**: \`${s.mode}\`\n\n` +
+    `변경하고 싶은 항목의 버튼을 선택하세요:`
+  );
+}
+
+function getMainSettingsKeyboard(s: RuntimeWorkerSettings): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(`🏢 공급사 변경 [${s.engine.toUpperCase()}]`, "menu:engine")
+    .row()
+    .text(`🎯 모델 변경 [${s.model}]`, "menu:model")
+    .row()
+    .text(`🧠 Effort 변경 [${s.effort}]`, "menu:effort")
+    .row()
+    .text("🔄 닫기", "close_menu");
+}
+
+async function sendSettingsMenu(ctx: Context) {
+  const s = settingsManager.getSettings();
+  await ctx.reply(getSettingsText(s), {
+    parse_mode: "Markdown",
+    reply_markup: getMainSettingsKeyboard(s),
+  });
+}
+
+async function editSettingsMenu(ctx: Context) {
+  const s = settingsManager.getSettings();
+  try {
+    await ctx.editMessageText(getSettingsText(s), {
+      parse_mode: "Markdown",
+      reply_markup: getMainSettingsKeyboard(s),
+    });
+  } catch {}
+}
+
+async function showEngineSubmenu(ctx: Context) {
+  const s = settingsManager.getSettings();
+  const keyboard = new InlineKeyboard()
+    .text(`${s.engine === "agy" ? "✅ " : ""}AGY (Antigravity)`, "set_engine:agy")
+    .row()
+    .text(`${s.engine === "cursor" ? "✅ " : ""}Cursor Agent`, "set_engine:cursor")
+    .row()
+    .text(`${s.engine === "openai" ? "✅ " : ""}OpenAI Direct API`, "set_engine:openai")
+    .row()
+    .text("⬅️ 메인 설정으로 돌아가기", "menu:main");
+
+  await ctx.editMessageText(
+    `🏢 **공급사(Engine) 선택**\n\n현재: \`${s.engine.toUpperCase()}\`\n사용하실 AI 공급사를 선택하세요:`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }
+  );
+}
+
+async function showModelSubmenu(ctx: Context) {
+  const s = settingsManager.getSettings();
+  const presets = SettingsManager.PRESETS[s.engine].models;
+  const keyboard = new InlineKeyboard();
+
+  for (const m of presets) {
+    const isCurrent = s.model === m;
+    keyboard.text(`${isCurrent ? "✅ " : ""}${m}`, `set_model:${m}`).row();
+  }
+  keyboard.text("⬅️ 메인 설정으로 돌아가기", "menu:main");
+
+  await ctx.editMessageText(
+    `🎯 **추천 모델 선택** (공급사: \`${s.engine.toUpperCase()}\`)\n\n현재 모델: \`${s.model}\`\n원하는 모델을 선택하거나, 직접 \`/모델 <모델명>\` 명령어로 임의 지정할 수 있습니다.`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }
+  );
+}
+
+async function showEffortSubmenu(ctx: Context) {
+  const s = settingsManager.getSettings();
+  const efforts = ["low", "medium", "high", "max"];
+  const keyboard = new InlineKeyboard();
+
+  for (const e of efforts) {
+    const isCurrent = s.effort === e;
+    keyboard.text(`${isCurrent ? "✅ " : ""}${e.toUpperCase()}`, `set_effort:${e}`);
+  }
+  keyboard.row().text("⬅️ 메인 설정으로 돌아가기", "menu:main");
+
+  await ctx.editMessageText(
+    `🧠 **Effort(추론 강도) 선택**\n\n현재 Effort: \`${s.effort}\`\n(AGY Gemini 및 추론 모델 호출 시 적용됩니다)`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }
+  );
+}
+
 async function saveIncomingMessage(ctx: Context) {
   if (!ctx.message || !ctx.chat) return;
 
@@ -76,7 +295,6 @@ async function saveIncomingMessage(ctx: Context) {
   let mediaPath: string | undefined = undefined;
   let hasMedia = false;
 
-  // 사진/문서 다운로드 처리
   try {
     if (msg.photo && msg.photo.length > 0) {
       hasMedia = true;
@@ -122,6 +340,7 @@ async function handleSummarize(ctx: Context) {
   const chatId = ctx.chat.id;
   const currentMsgId = ctx.message.message_id;
   const replyToId = ctx.message.reply_to_message?.message_id;
+  const currentSettings = settingsManager.getSettings();
 
   // 1. 대상 대화 수집
   const { messages, fromMessageId, mode } = store.getMessagesForSummary(
@@ -144,9 +363,9 @@ async function handleSummarize(ctx: Context) {
 
   const statusMsg = await ctx.reply(
     `🔄 **[이슈 생성 파이프라인 가동]**\n` +
-      `• 대상: ${rangeDescription}\n` +
-      `• 수집된 메시지: ${messages.length}개\n\n` +
-      `⏳ [${config.worker.engine.toUpperCase()}] ${config.worker.model} 모델로 분석 및 이슈 생성 중...`,
+      `• 대상: ${rangeDescription} (${messages.length}개)\n` +
+      `• 워커: [${currentSettings.engine.toUpperCase()}] \`${currentSettings.model}\` (effort: ${currentSettings.effort})\n\n` +
+      `⏳ 분석 및 이슈 생성 중...`,
     { parse_mode: "Markdown" }
   );
 
@@ -189,6 +408,7 @@ async function handleSummarize(ctx: Context) {
     const responseText =
       `🎉 **이슈 정리 및 등록 완료!** (${Math.round(pipelineResult.processingTimeMs / 1000)}초 소요)\n\n` +
       `📌 **제목:** ${escapeMarkdown(pipelineResult.issue.title)}\n` +
+      `⚙️ **사용 모델:** [${pipelineResult.engine.toUpperCase()}] \`${pipelineResult.model}\`\n` +
       `🔗 **링크:** ${issueLink}\n\n` +
       `------------------------------------\n` +
       `📋 **[T3 Code 원클릭 프롬프트 (복사용)]**\n` +

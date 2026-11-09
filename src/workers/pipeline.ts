@@ -1,4 +1,4 @@
-import { config } from "../config.js";
+import { settingsManager } from "../storage/settings.js";
 import { runAgy } from "./agyWorker.js";
 import { runCursor } from "./cursorWorker.js";
 import { runOpenAI } from "./openaiWorker.js";
@@ -15,6 +15,7 @@ export interface PipelineResult {
   processingTimeMs: number;
   engine: string;
   model: string;
+  effort?: string;
 }
 
 export async function runSynthesisPipeline(
@@ -22,22 +23,26 @@ export async function runSynthesisPipeline(
   onProgress?: (step: string) => void
 ): Promise<PipelineResult> {
   const startTime = Date.now();
-  const engine = config.worker.engine;
-  const model = config.worker.model;
+  const settings = settingsManager.getSettings();
+  const engine = settings.engine;
+  const model = settings.model;
+  const mode = settings.mode;
+  const effort = settings.effort;
 
-  onProgress?.(`[${engine.toUpperCase()}] ${model} 모델로 대화 분석 및 GitHub Issue 생성 중...`);
+  const effortDesc = engine === "agy" ? ` (effort: ${effort})` : "";
+  onProgress?.(`[${engine.toUpperCase()}] ${model}${effortDesc} 모델로 대화 분석 및 GitHub Issue 생성 중...`);
 
   const fullPrompt = `${ONESHOT_ISSUE_SYNTHESIZER_PROMPT}\n\n[정제할 대화 내용 원본]\n${rawConversation}\n\n위 대화를 분석하여 양식에 맞추어 완성형 GitHub Issue를 작성해주세요. 반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 제목을 포함해야 합니다.`;
 
   let rawOutput = "";
 
   if (engine === "agy") {
-    rawOutput = await runAgy(fullPrompt, model, config.worker.mode);
+    rawOutput = await runAgy(fullPrompt, model, mode, effort);
   } else if (engine === "openai") {
     rawOutput = await runOpenAI(fullPrompt, model);
   } else {
     // cursor
-    rawOutput = await runCursor(fullPrompt, model, config.worker.mode);
+    rawOutput = await runCursor(fullPrompt, model, mode);
   }
 
   const issue = parseIssueOutput(rawOutput, rawConversation);
@@ -48,6 +53,7 @@ export async function runSynthesisPipeline(
     processingTimeMs,
     engine,
     model,
+    effort,
   };
 }
 
