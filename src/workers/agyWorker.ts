@@ -15,20 +15,26 @@ export async function runAgy(
   prompt: string,
   model = "gemini-3.8-flash-low",
   mode: "plan" | "auto" = "plan",
-  effort: "low" | "medium" | "high" | "xhigh" | "max" = "low"
+  imagePaths: string[] = []
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const agyBin = getAgyExecutablePath();
 
     // shell: false 로 실행하여 인자 내 공백/따옴표 쪼개짐 원천 방지
-    const args = [
+    // effort는 모델명 접미사에 포함되므로 --effort 플래그는 사용하지 않음
+    const args: string[] = [
       `--model=${model}`,
       `--mode=${mode}`,
-      `--effort=${effort}`,
       "--dangerously-skip-permissions",
-      "-p",
-      prompt,
     ];
+
+    // 사진 vision: 이미지가 있는 임시 디렉터리를 워크스페이스에 추가
+    const uniqueDirs = [...new Set(imagePaths.map((p) => path.dirname(p)))];
+    for (const dir of uniqueDirs) {
+      args.push("--add-dir", dir);
+    }
+
+    args.push("-p", prompt);
 
     const child = spawn(agyBin, args, {
       shell: false,

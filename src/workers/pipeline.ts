@@ -1,7 +1,5 @@
 import { settingsManager } from "../storage/settings.js";
 import { runAgy } from "./agyWorker.js";
-import { runCursor } from "./cursorWorker.js";
-import { runOpenAI } from "./openaiWorker.js";
 import { ONESHOT_ISSUE_SYNTHESIZER_PROMPT } from "./prompts.js";
 
 export interface SynthesizedIssue {
@@ -13,37 +11,51 @@ export interface SynthesizedIssue {
 export interface PipelineResult {
   issue: SynthesizedIssue;
   processingTimeMs: number;
-  engine: string;
   model: string;
-  effort?: string;
+}
+
+export interface PipelineImageRef {
+  messageId: number;
+  localPath: string;
 }
 
 export async function runSynthesisPipeline(
   rawConversation: string,
-  onProgress?: (step: string) => void
+  onProgress?: (step: string) => void,
+  images: PipelineImageRef[] = []
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const settings = settingsManager.getSettings();
-  const engine = settings.engine;
   const model = settings.model;
   const mode = settings.mode;
-  const effort = settings.effort;
 
-  const effortDesc = engine === "agy" ? ` (effort: ${effort})` : "";
-  onProgress?.(`[${engine.toUpperCase()}] ${model}${effortDesc} 모델로 대화 분석 및 GitHub Issue 생성 중...`);
+  onProgress?.(`[AGY] ${model} 모델로 대화 분석 및 GitHub Issue 생성 중...`);
 
-  const fullPrompt = `${ONESHOT_ISSUE_SYNTHESIZER_PROMPT}\n\n[정제할 대화 내용 원본]\n${rawConversation}\n\n위 대화를 분석하여 양식에 맞추어 완성형 GitHub Issue를 작성해주세요. 반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 제목을 포함해야 합니다.`;
-
-  let rawOutput = "";
-
-  if (engine === "agy") {
-    rawOutput = await runAgy(fullPrompt, model, mode, effort);
-  } else if (engine === "openai") {
-    rawOutput = await runOpenAI(fullPrompt, model);
-  } else {
-    // cursor
-    rawOutput = await runCursor(fullPrompt, model, mode);
+  let imageSection = "";
+  if (images.length > 0) {
+    const lines = images.map(
+      (img) => `- 메시지 #${img.messageId}: ${img.localPath}`
+    );
+    imageSection =
+      `\n\n[첨부 사진 파일 — vision으로 직접 확인]\n` +
+      `${lines.join("\n")}\n` +
+      `위 사진들을 확인하고 UI/화면/도식 내용을 텍스트로 요약·반영하세요. ` +
+      `GitHub Issue 본문에는 이미지 링크/첨부를 넣지 말고 텍스트 설명만 작성하세요.`;
   }
+
+  const fullPrompt =
+    `${ONESHOT_ISSUE_SYNTHESIZER_PROMPT}\n\n` +
+    `[정제할 대화 내용 원본]\n${rawConversation}` +
+    `${imageSection}\n\n` +
+    `위 대화를 분석하여 양식에 맞추어 완성형 GitHub Issue를 작성해주세요. ` +
+    `반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 제목을 포함해야 합니다.`;
+
+  const rawOutput = await runAgy(
+    fullPrompt,
+    model,
+    mode,
+    images.map((img) => img.localPath)
+  );
 
   const issue = parseIssueOutput(rawOutput, rawConversation);
   const processingTimeMs = Date.now() - startTime;
@@ -51,9 +63,7 @@ export async function runSynthesisPipeline(
   return {
     issue,
     processingTimeMs,
-    engine,
     model,
-    effort,
   };
 }
 

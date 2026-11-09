@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
 
+export type MediaKind = "photo" | "document" | "voice" | "other";
+
 export interface ChatMessage {
   id: number;
   chatId: number;
@@ -11,7 +13,10 @@ export interface ChatMessage {
   text: string;
   replyToMessageId?: number;
   hasMedia?: boolean;
-  mediaPath?: string;
+  mediaKind?: MediaKind;
+  /** Telegram file_id — 요약 시 임시 다운로드용 (로컬 영구 저장 없음) */
+  telegramFileId?: string;
+  fileName?: string;
   caption?: string;
 }
 
@@ -24,13 +29,11 @@ export class MessageStore {
   private dataDir: string;
   private messagesFile: string;
   private stateFile: string;
-  private mediaDir: string;
 
   constructor() {
     this.dataDir = config.storage.dataDir;
     this.messagesFile = path.join(this.dataDir, "messages.json");
     this.stateFile = path.join(this.dataDir, "checkpoints.json");
-    this.mediaDir = path.join(this.dataDir, "media");
 
     this.initDirectories();
   }
@@ -39,19 +42,12 @@ export class MessageStore {
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
     }
-    if (!fs.existsSync(this.mediaDir)) {
-      fs.mkdirSync(this.mediaDir, { recursive: true });
-    }
     if (!fs.existsSync(this.messagesFile)) {
       fs.writeFileSync(this.messagesFile, JSON.stringify([], null, 2), "utf-8");
     }
     if (!fs.existsSync(this.stateFile)) {
       fs.writeFileSync(this.stateFile, JSON.stringify({}, null, 2), "utf-8");
     }
-  }
-
-  public getMediaDir(): string {
-    return this.mediaDir;
   }
 
   private readAllMessages(): ChatMessage[] {
@@ -82,7 +78,6 @@ export class MessageStore {
 
   public saveMessage(message: ChatMessage): void {
     const messages = this.readAllMessages();
-    // 중복 방지
     const exists = messages.some((m) => m.chatId === message.chatId && m.id === message.id);
     if (!exists) {
       messages.push(message);
@@ -151,9 +146,17 @@ export class MessageStore {
 
     return messages
       .map((m) => {
-        let content = m.text;
+        let content = m.text || m.caption || "";
         if (m.hasMedia) {
-          content += ` [첨부파일: ${m.mediaPath ? path.basename(m.mediaPath) : "미디어"} ${m.caption ? `(설명: ${m.caption})` : ""}]`;
+          if (m.mediaKind === "photo") {
+            content += ` [사진 첨부${m.caption ? ` / 캡션: ${m.caption}` : ""} — 별도 이미지 파일로 전달됨]`;
+          } else if (m.mediaKind === "document") {
+            content += ` [문서 첨부: ${m.fileName || "파일"} — 모델 분석 대상 아님, 필요 시 직접 전달]`;
+          } else if (m.mediaKind === "voice") {
+            content += ` [음성 첨부 — 모델 분석 대상 아님, 필요 시 직접 전달]`;
+          } else {
+            content += ` [미디어 첨부 — 모델 분석 대상 아님]`;
+          }
         }
         return `[#${m.id} | ${m.date}] ${m.sender}: ${content}`;
       })

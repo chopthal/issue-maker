@@ -7,16 +7,15 @@
 ## 💡 핵심 기능
 
 1. **텔레그램 대화 분석 & 이슈 생성**:
-   * 기획자/개발자의 대화, 스크린샷, 기술 제약사항을 실시간으로 취합.
-   * 잡담/농담 100% 필터링 + 의사결정(Decision Log) 추적.
-   * Given-When-Then 인수조건(AC) + 작업 분할(Tasks) 체크리스트를 포함한 정식 GitHub Issue 자동 등록.
-   * 등록 완료 후 **T3 Code 원클릭 프롬프트** 즉시 회신.
-2. **실시간 LLM 공급사 / 모델 / Effort 변경**:
-   * 텔레그램 채팅방에서 `/설정` 명령어나 인라인 버튼으로 **공급사(AGY / Cursor / OpenAI)**, **모델명**, **Effort(추론 강도)**를 즉시 변경 가능.
+   * 기획자/개발자의 대화·스크린샷(사진)을 취합해 AGY가 스펙 이슈로 정리.
+   * 사진은 요약 시에만 모델(vision)로 전달하고, Issue 본문에는 **텍스트 설명만** 반영 (이미지 첨부 없음).
+   * 잡담 필터링 + Decision Log + Acceptance Criteria + Tasks 체크리스트.
+   * 등록 완료 후 **T3 Code 원클릭 프롬프트** (`gh issue view N 파악 및 논의`) 회신.
+2. **실시간 모델 변경 (AGY 전용)**:
+   * `/settings` 또는 `/model`로 Gemini 3.8 Flash / Gemini 4 Argon (low·medium·high) 선택.
 3. **Windows 시스템 트레이 & 무인 자동 시작**:
    * 콘솔 창 없이 백그라운드 상주.
    * 부팅 시 단일 인스턴스 자동 시작 (Win32 Mutex 보호).
-   * 트레이 아이콘 우클릭으로 로그 확인, 설정 열기, 봇 재시작 가능.
 
 ---
 
@@ -34,8 +33,7 @@ GITHUB_TOKEN=ghp_your_token
 GITHUB_OWNER=your_github_username
 GITHUB_REPO=your_repository_name
 
-# 기본 AI 워커 설정
-WORKER_ENGINE=agy
+# AGY 기본 모델 (effort는 모델명에 포함)
 WORKER_MODEL=gemini-3.8-flash-low
 ```
 
@@ -69,14 +67,15 @@ powershell -ExecutionPolicy Bypass -File "scripts\register-startup.ps1"
 | `/resetcheckpoint` | 체크포인트를 초기화하여 전체 대화를 대상으로 설정 |
 | `/help` (또는 `/start`) | 사용 가이드 안내 |
 
-### 2. LLM 엔진 / 모델 / Effort 실시간 제어
+### 2. 모델 설정 (AGY)
 | 명령어 | 설명 |
 |---|---|
-| `/settings` | 인라인 버튼 UI로 공급사/모델/effort 대화형 변경 |
-| `/engine agy` \| `cursor` \| `openai` | 공급사 즉시 변경 |
-| `/model <모델명>` | 모델명 직접 지정 (예: `/model gemini-4-argon-medium`) |
-| `/effort low` \| `medium` \| `high` \| `max` | 추론 강도(Effort) 변경 (AGY 지원) |
-| `/mode plan` \| `auto` | 실행 모드 변경 |
+| `/settings` | 인라인 버튼으로 모델 선택 |
+| `/model <모델명>` | 모델 직접 지정 |
+
+**선택 가능 모델**
+- `gemini-3.8-flash-low` / `medium` / `high`
+- `gemini-4-argon-low` / `medium` / `high`
 
 ---
 

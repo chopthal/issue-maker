@@ -60,7 +60,7 @@ async function runMockTest() {
   });
 
   console.log("\n==========================================");
-  console.log(`🎉 파이프라인 완료! (소요 시간: ${Math.round(result.processingTimeMs / 1000)}초 | 엔진: ${result.engine} | 모델: ${result.model})`);
+  console.log(`🎉 파이프라인 완료! (소요 시간: ${Math.round(result.processingTimeMs / 1000)}초 | 모델: ${result.model})`);
   console.log("==========================================");
   console.log(`\n📌 TITLE: ${result.issue.title}\n`);
   console.log(result.issue.body);

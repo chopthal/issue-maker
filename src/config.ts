@@ -3,8 +3,6 @@ import path from "node:path";
 
 dotenv.config();
 
-export type WorkerEngine = "agy" | "cursor" | "openai";
-
 export interface AppConfig {
   telegram: {
     botToken: string;
@@ -15,12 +13,7 @@ export interface AppConfig {
     owner: string;
     repo: string;
   };
-  openai: {
-    apiKey: string;
-    baseUrl?: string;
-  };
   worker: {
-    engine: WorkerEngine;
     model: string;
     mode: "plan" | "auto";
   };
@@ -41,12 +34,7 @@ export const config: AppConfig = {
     owner: process.env.GITHUB_OWNER || "",
     repo: process.env.GITHUB_REPO || "",
   },
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY || "",
-    baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-  },
   worker: {
-    engine: (process.env.WORKER_ENGINE as WorkerEngine) || "agy",
     model: process.env.WORKER_MODEL || "gemini-3.8-flash-low",
     mode: (process.env.WORKER_MODE as "plan" | "auto") || "plan",
   },
