@@ -145,8 +145,11 @@ def is_bot_running():
 
 
 def watch_bot_process():
-    """봇이 /restart(exit 42)로 종료되면 자동 재기동한다."""
+    """봇 프로세스를 감시하며, 사용자가 직접 트레이에서 종료한 경우가 아니면 항상 자동 복구한다."""
     global bot_process
+    crash_count = 0
+    last_crash_time = 0.0
+
     while not watcher_stop.is_set():
         try:
             time.sleep(1)
@@ -165,14 +168,32 @@ def watch_bot_process():
                 if bot_process is proc:
                     bot_process = None
 
-            if code == RESTART_EXIT_CODE and not suppressed:
-                log_launcher("텔레그램 /restart 감지 — 봇을 재시작합니다.")
+            if suppressed:
+                # 사용자가 트레이 메뉴에서 직접 '재시작' 또는 '종료'를 누른 경우
+                continue
+
+            if code == RESTART_EXIT_CODE:
+                log_launcher("텔레그램 /restart 감지 — 즉시 봇을 재기동합니다.")
+                crash_count = 0
                 time.sleep(1)
                 start_bot()
             else:
-                log_launcher(f"봇 프로세스가 종료되었습니다. (code={code})")
+                now = time.time()
+                # 60초 이상 정상 동작 후 꺼졌다면 크래시 카운트 초기화
+                if now - last_crash_time > 60:
+                    crash_count = 0
+                last_crash_time = now
+                crash_count += 1
+
+                # 빈번한 크래시 시 점진적 지연 (최대 30초)
+                delay = min(5 * crash_count, 30)
+                log_launcher(f"⚠️ 봇 프로세스 비정상 종료 (code={code}). {delay}초 후 자동으로 복구합니다... (연속 {crash_count}회)")
+                time.sleep(delay)
+                if not watcher_stop.is_set():
+                    start_bot()
         except Exception as e:
             log_launcher(f"감시 루프 오류: {e}")
+            time.sleep(2)
 
 
 def restart_bot(icon=None, item=None):

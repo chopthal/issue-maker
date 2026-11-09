@@ -76,7 +76,30 @@ async function main() {
   process.once("SIGTERM", stop);
 
   try {
-    const me = await bot.api.getMe();
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const connectWithRetry = async (maxRetries = 10): Promise<any> => {
+      let attempts = 0;
+      while (true) {
+        attempts++;
+        try {
+          return await bot.api.getMe();
+        } catch (err: any) {
+          console.warn(`[Network] 텔레그램 서버 연결 시도 ${attempts}회 실패: ${err.message || err}`);
+          if (maxRetries > 0 && attempts >= maxRetries) {
+            throw err;
+          }
+          const waitSec = Math.min(attempts * 3, 30);
+          console.log(`⏳ ${waitSec}초 후 텔레그램 재연결을 시도합니다...`);
+          await delay(waitSec * 1000);
+        }
+      }
+    };
+
+    bot.catch((err) => {
+      console.error("[grammY] 롱폴링/메시지 처리 중 예외 발생:", err.error || err);
+    });
+
+    const me = await connectWithRetry(10);
     const s = settingsManager.getSettings();
     console.log(`🤖 Telegram Bot Connected: @${me.username} (${me.first_name})`);
     console.log(`⚙️ AI Worker: [AGY] ${s.model} (${s.mode} mode)`);
