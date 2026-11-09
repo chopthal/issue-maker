@@ -1,6 +1,7 @@
 import { settingsManager } from "../storage/settings.js";
 import { runAgy } from "./agyWorker.js";
 import { ONESHOT_ISSUE_SYNTHESIZER_PROMPT } from "./prompts.js";
+import { throwIfAborted } from "../runtime/jobManager.js";
 
 export interface SynthesizedIssue {
   title: string;
@@ -22,20 +23,20 @@ export interface PipelineImageRef {
 export async function runSynthesisPipeline(
   rawConversation: string,
   onProgress?: (step: string) => void,
-  images: PipelineImageRef[] = []
+  images: PipelineImageRef[] = [],
+  signal?: AbortSignal
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const settings = settingsManager.getSettings();
   const model = settings.model;
   const mode = settings.mode;
 
+  throwIfAborted(signal);
   onProgress?.(`[AGY] ${model} 모델로 대화 분석 및 GitHub Issue 생성 중...`);
 
   let imageSection = "";
   if (images.length > 0) {
-    const lines = images.map(
-      (img) => `- 메시지 #${img.messageId}: ${img.localPath}`
-    );
+    const lines = images.map((img) => `- 메시지 #${img.messageId}: ${img.localPath}`);
     imageSection =
       `\n\n[첨부 사진 파일 — vision으로 직접 확인]\n` +
       `${lines.join("\n")}\n` +
@@ -54,8 +55,11 @@ export async function runSynthesisPipeline(
     fullPrompt,
     model,
     mode,
-    images.map((img) => img.localPath)
+    images.map((img) => img.localPath),
+    signal
   );
+
+  throwIfAborted(signal);
 
   const issue = parseIssueOutput(rawOutput, rawConversation);
   const processingTimeMs = Date.now() - startTime;
@@ -78,7 +82,11 @@ function parseIssueOutput(raw: string, fallbackBody: string): SynthesizedIssue {
       title = line.replace(/#?\s*TITLE:\s*/i, "").trim();
       bodyStartIndex = i + 1;
       break;
-    } else if (line.startsWith("# [") || line.startsWith("# Feature") || line.startsWith("# [Feature]")) {
+    } else if (
+      line.startsWith("# [") ||
+      line.startsWith("# Feature") ||
+      line.startsWith("# [Feature]")
+    ) {
       title = line.replace(/^#\s*/, "").trim();
       bodyStartIndex = i + 1;
       break;

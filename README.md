@@ -62,7 +62,9 @@ powershell -ExecutionPolicy Bypass -File "scripts\register-startup.ps1"
 | 명령어 | 설명 |
 |---|---|
 | `/summary` or `여기까지 정리` | 직전 체크포인트 이후의 대화를 취합하여 원샷 이슈 생성 |
-| **(답장으로) `/summary`** | 답장한 메시지부터 현재까지 구간을 취합하여 원샷 이슈 생성 |
+| `/preview` | Issue 등록 없이 초안만 텔레그램에 표시 (체크포인트 유지) |
+| **(답장으로) `/summary` `/preview`** | 답장한 메시지부터 현재까지 구간만 처리 |
+| `/cancel` | 진행 중인 `/summary` 또는 `/preview` 취소 |
 | `/checkpoint` | 현재 기록된 마지막 체크포인트 메시지 ID 조회 |
 | `/resetcheckpoint` | 체크포인트를 초기화하여 전체 대화를 대상으로 설정 |
 | `/help` (또는 `/start`) | 사용 가이드 안내 |
@@ -76,6 +78,15 @@ powershell -ExecutionPolicy Bypass -File "scripts\register-startup.ps1"
 **선택 가능 모델**
 - `gemini-3.8-flash-low` / `medium` / `high`
 - `gemini-4-argon-low` / `medium` / `high`
+
+### 3. 상태·운영
+| 명령어 | 설명 |
+|---|---|
+| `/status` | 모델, 저장소, 체크포인트, 업타임, 작업 상태 |
+| `/ping` | 생존 확인 + 응답 지연(ms) |
+| `/chatid` | 현재 채팅방 ID 출력 (`ALLOWED_CHAT_IDS`용) |
+| `/last` | 이 방에서 마지막 생성 이슈 링크/정보 |
+| `/restart` | 봇 재시작 (트레이 런처가 exit code 42를 감지해 자동 재기동) |
 
 ---
 

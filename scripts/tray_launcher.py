@@ -13,9 +13,18 @@ LOG_FILE = os.path.join(PROJECT_DIR, "data", "bot.log")
 ENV_FILE = os.path.join(PROJECT_DIR, ".env")
 NODE_APP = os.path.join(PROJECT_DIR, "dist", "index.js")
 
+# 텔레그램 /restart 가 process.exit(42) 로 종료할 때 자동 재기동
+RESTART_EXIT_CODE = 42
+
 # Windows 단일 인스턴스 Mutex
 ERROR_ALREADY_EXISTS = 183
 mutex_handle = None
+
+bot_process = None
+process_lock = threading.Lock()
+suppress_auto_restart = False
+watcher_stop = threading.Event()
+
 
 def acquire_single_instance_mutex():
     global mutex_handle
@@ -31,6 +40,7 @@ def acquire_single_instance_mutex():
         # 이미 다른 트레이 인스턴스가 실행 중
         sys.exit(0)
 
+
 def truncate_log_if_needed(max_lines=2000):
     try:
         if not os.path.exists(LOG_FILE):
@@ -43,6 +53,7 @@ def truncate_log_if_needed(max_lines=2000):
     except Exception:
         pass
 
+
 def log_launcher(message):
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     formatted = f"[{now}] [LAUNCHER] {message}\n"
@@ -54,8 +65,6 @@ def log_launcher(message):
     except Exception:
         pass
 
-bot_process = None
-process_lock = threading.Lock()
 
 def create_image():
     # 64x64 보라/파랑 둥근 아이콘 생성
@@ -67,8 +76,9 @@ def create_image():
     draw.rectangle((16, 40, 36, 46), fill="#ffffff")
     return image
 
+
 def start_bot():
-    global bot_process
+    global bot_process, suppress_auto_restart
     with process_lock:
         if bot_process and bot_process.poll() is None:
             return
@@ -96,13 +106,16 @@ def start_bot():
                 stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
+            suppress_auto_restart = False
             log_launcher(f"Issue-Maker Bot 프로세스가 시작되었습니다. (PID: {bot_process.pid})")
         except Exception as e:
             log_launcher(f"Issue-Maker Bot 프로세스 시작 실패: {e}")
 
+
 def stop_bot():
-    global bot_process
+    global bot_process, suppress_auto_restart
     with process_lock:
+        suppress_auto_restart = True
         if bot_process:
             pid = bot_process.pid
             log_launcher(f"Issue-Maker Bot 프로세스를 중지합니다. (PID: {pid})")
@@ -125,6 +138,35 @@ def stop_bot():
         except Exception:
             pass
 
+
+def watch_bot_process():
+    """봇이 /restart(exit 42)로 종료되면 자동 재기동한다."""
+    global bot_process
+    while not watcher_stop.is_set():
+        time.sleep(1)
+        with process_lock:
+            proc = bot_process
+            suppressed = suppress_auto_restart
+
+        if proc is None:
+            continue
+
+        code = proc.poll()
+        if code is None:
+            continue
+
+        with process_lock:
+            if bot_process is proc:
+                bot_process = None
+
+        if code == RESTART_EXIT_CODE and not suppressed:
+            log_launcher("텔레그램 /restart 감지 — 봇을 재시작합니다.")
+            time.sleep(1)
+            start_bot()
+        else:
+            log_launcher(f"봇 프로세스가 종료되었습니다. (code={code})")
+
+
 def restart_bot(icon=None, item=None):
     log_launcher("봇 재시작 요청을 수신했습니다.")
     stop_bot()
@@ -133,28 +175,37 @@ def restart_bot(icon=None, item=None):
     if icon:
         icon.notify("Issue-Maker 봇이 재시작되었습니다.", "Issue-Maker")
 
+
 def open_log(icon=None, item=None):
     if os.path.exists(LOG_FILE):
         os.startfile(LOG_FILE)
+
 
 def open_env(icon=None, item=None):
     if os.path.exists(ENV_FILE):
         os.startfile(ENV_FILE)
 
+
 def open_folder(icon=None, item=None):
     os.startfile(PROJECT_DIR)
 
+
 def on_exit(icon, item):
     log_launcher("Issue-Maker 트레이 런처를 종료합니다.")
+    watcher_stop.set()
     stop_bot()
     icon.stop()
     if mutex_handle:
         ctypes.windll.kernel32.CloseHandle(mutex_handle)
 
+
 def main():
     acquire_single_instance_mutex()
     log_launcher("Issue-Maker 트레이 런처가 시작되었습니다.")
     start_bot()
+
+    watcher = threading.Thread(target=watch_bot_process, name="BotWatcher", daemon=True)
+    watcher.start()
 
     menu = pystray.Menu(
         pystray.MenuItem("Issue-Maker Bot (실행 중)", None, enabled=False),
@@ -169,6 +220,7 @@ def main():
 
     icon = pystray.Icon("IssueMakerBot", create_image(), "Issue-Maker Bot", menu)
     icon.run()
+
 
 if __name__ == "__main__":
     main()

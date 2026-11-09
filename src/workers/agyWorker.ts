@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { JobCancelledError } from "../runtime/jobManager.js";
 
 function getAgyExecutablePath(): string {
   const localAgy = path.join(os.homedir(), "AppData", "Local", "agy", "bin", "agy.exe");
@@ -15,8 +16,13 @@ export async function runAgy(
   prompt: string,
   model = "gemini-3.8-flash-low",
   mode: "plan" | "auto" = "plan",
-  imagePaths: string[] = []
+  imagePaths: string[] = [],
+  signal?: AbortSignal
 ): Promise<string> {
+  if (signal?.aborted) {
+    throw new JobCancelledError();
+  }
+
   return new Promise((resolve, reject) => {
     const agyBin = getAgyExecutablePath();
 
@@ -28,7 +34,6 @@ export async function runAgy(
       "--dangerously-skip-permissions",
     ];
 
-    // 사진 vision: 이미지가 있는 임시 디렉터리를 워크스페이스에 추가
     const uniqueDirs = [...new Set(imagePaths.map((p) => path.dirname(p)))];
     for (const dir of uniqueDirs) {
       args.push("--add-dir", dir);
@@ -36,14 +41,33 @@ export async function runAgy(
 
     args.push("-p", prompt);
 
-    const child = spawn(agyBin, args, {
+    const child: ChildProcessWithoutNullStreams = spawn(agyBin, args, {
       shell: false,
       windowsHide: true,
       env: { ...process.env },
-    });
+    }) as ChildProcessWithoutNullStreams;
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+
+    const onAbort = () => {
+      try {
+        child.kill();
+      } catch {}
+      if (!settled) {
+        settled = true;
+        reject(new JobCancelledError());
+      }
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     child.stdout.on("data", (data) => {
       stdout += data.toString();
@@ -54,22 +78,42 @@ export async function runAgy(
     });
 
     child.on("close", (code) => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      if (settled) return;
+
+      if (signal?.aborted) {
+        settled = true;
+        reject(new JobCancelledError());
+        return;
+      }
+
       const output = stdout.trim();
       if (code === 0 && output.length > 0) {
+        settled = true;
         resolve(output);
       } else {
         const err = `agy execution failed with code ${code}. Stderr: ${stderr.trim()}`;
         console.error(err);
         if (output.length > 0) {
+          settled = true;
           resolve(output);
         } else {
+          settled = true;
           reject(new Error(err));
         }
       }
     });
 
     child.on("error", (error) => {
-      reject(error);
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
     });
   });
 }
