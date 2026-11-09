@@ -63,20 +63,20 @@ powershell -ExecutionPolicy Bypass -File "scripts\register-startup.ps1"
 ### 1. 대화 정리 및 이슈 생성
 | 명령어 | 설명 |
 |---|---|
-| `/정리` or `여기까지 정리` | 직전 체크포인트 이후의 대화를 취합하여 원샷 이슈 생성 |
-| **(답장으로) `/정리`** | 답장한 메시지부터 현재까지 구간을 취합하여 원샷 이슈 생성 |
-| `/체크포인트` | 현재 기록된 마지막 체크포인트 메시지 ID 조회 |
-| `/체크포인트초기화` | 체크포인트를 초기화하여 전체 대화를 대상으로 설정 |
-| `/도움말` | 사용 가이드 안내 |
+| `/summary` or `여기까지 정리` | 직전 체크포인트 이후의 대화를 취합하여 원샷 이슈 생성 |
+| **(답장으로) `/summary`** | 답장한 메시지부터 현재까지 구간을 취합하여 원샷 이슈 생성 |
+| `/checkpoint` | 현재 기록된 마지막 체크포인트 메시지 ID 조회 |
+| `/resetcheckpoint` | 체크포인트를 초기화하여 전체 대화를 대상으로 설정 |
+| `/help` (또는 `/start`) | 사용 가이드 안내 |
 
 ### 2. LLM 엔진 / 모델 / Effort 실시간 제어
 | 명령어 | 설명 |
 |---|---|
-| `/설정` | 인라인 버튼 UI로 공급사/모델/effort 대화형 변경 |
-| `/엔진 agy` \| `cursor` \| `openai` | 공급사 즉시 변경 |
-| `/모델 <모델명>` | 모델명 직접 지정 (예: `/모델 gemini-4-argon-medium`) |
+| `/settings` | 인라인 버튼 UI로 공급사/모델/effort 대화형 변경 |
+| `/engine agy` \| `cursor` \| `openai` | 공급사 즉시 변경 |
+| `/model <모델명>` | 모델명 직접 지정 (예: `/model gemini-4-argon-medium`) |
 | `/effort low` \| `medium` \| `high` \| `max` | 추론 강도(Effort) 변경 (AGY 지원) |
-| `/모드 plan` \| `auto` | 실행 모드 변경 |
+| `/mode plan` \| `auto` | 실행 모드 변경 |
 
 ---
 

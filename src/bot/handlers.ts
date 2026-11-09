@@ -8,8 +8,8 @@ import { createGitHubIssue } from "../github/issueCreator.js";
 import { config, WorkerEngine } from "../config.js";
 
 export function registerHandlers(bot: Bot) {
-  // 1. 도움말
-  bot.command(["start", "help", "도움말"], async (ctx) => {
+  // 1. 도움말 (/start, /help)
+  bot.command(["start", "help"], async (ctx) => {
     const s = settingsManager.getSettings();
     await ctx.reply(
       `👋 **Issue-Maker 봇에 오신 것을 환영합니다!**\n\n` +
@@ -17,38 +17,38 @@ export function registerHandlers(bot: Bot) {
         `⚙️ **현재 AI 설정**:\n` +
         `• 공급사: \`${s.engine.toUpperCase()}\` | 모델: \`${s.model}\` | Effort: \`${s.effort}\`\n\n` +
         `📌 **대화 정리 명령어**:\n` +
-        `• \`/정리\` 또는 \`여기까지 정리\`: 직전 정리 시점(체크포인트) 이후 대화 정리\n` +
-        `• **(답장으로) \`/정리\`**: 해당 메시지부터 현재까지 지정 구간 정리\n` +
-        `• \`/체크포인트\`: 현재 워터마크 확인\n` +
-        `• \`/체크포인트초기화\`: 워터마크 초기화\n\n` +
+        `• \`/summary\` 또는 \`여기까지 정리\`: 직전 정리 시점(체크포인트) 이후 대화 정리\n` +
+        `• **(답장으로) \`/summary\`**: 해당 메시지부터 현재까지 지정 구간 정리\n` +
+        `• \`/checkpoint\`: 현재 워터마크 확인\n` +
+        `• \`/resetcheckpoint\`: 워터마크 초기화\n\n` +
         `🛠️ **LLM 설정 변경 (실시간)**:\n` +
-        `• \`/설정\` : 버튼 메뉴로 공급사/모델/effort 변경\n` +
-        `• \`/엔진 agy|cursor|openai\` : 공급사 즉시 변경\n` +
-        `• \`/모델 <모델명>\` : 모델명 직접 변경\n` +
+        `• \`/settings\` : 버튼 메뉴로 공급사/모델/effort 변경\n` +
+        `• \`/engine agy|cursor|openai\` : 공급사 즉시 변경\n` +
+        `• \`/model <모델명>\` : 모델명 직접 변경\n` +
         `• \`/effort low|medium|high|max\` : 추론 강도 변경\n` +
-        `• \`/모드 plan|auto\` : 실행 모드 변경`,
+        `• \`/mode plan|auto\` : 실행 모드 변경`,
       { parse_mode: "Markdown" }
     );
   });
 
-  // 2. 체크포인트 확인/리셋
-  bot.command("체크포인트", async (ctx) => {
+  // 2. 체크포인트 확인/리셋 (/checkpoint, /resetcheckpoint)
+  bot.command("checkpoint", async (ctx) => {
     const cp = store.getCheckpoint(ctx.chat.id);
     await ctx.reply(`📍 현재 저장된 마지막 체크포인트 메시지 ID: #${cp || "없음(처음부터)"}`);
   });
 
-  bot.command("체크포인트초기화", async (ctx) => {
+  bot.command(["resetcheckpoint", "clearcheckpoint"], async (ctx) => {
     store.setCheckpoint(ctx.chat.id, 0);
-    await ctx.reply("🔄 체크포인트가 초기화되었습니다. 다음 /정리 시 전체 대화가 대상이 됩니다.");
+    await ctx.reply("🔄 체크포인트가 초기화되었습니다. 다음 /summary 시 전체 대화가 대상이 됩니다.");
   });
 
-  // 3. LLM 설정 인터랙티브 패널 (/설정, /settings, /config)
-  bot.command(["설정", "settings", "config"], async (ctx) => {
+  // 3. LLM 설정 인터랙티브 패널 (/settings, /config)
+  bot.command(["settings", "config"], async (ctx) => {
     await sendSettingsMenu(ctx);
   });
 
-  // 4. 빠른 텍스트 명령어 지원
-  bot.command(["엔진", "공급사", "engine", "provider"], async (ctx) => {
+  // 4. 빠른 텍스트 명령어 지원 (/engine, /model, /effort, /mode)
+  bot.command(["engine", "provider"], async (ctx) => {
     const target = ctx.match?.trim().toLowerCase();
     if (target === "agy" || target === "cursor" || target === "openai") {
       const updated = settingsManager.setEngine(target as WorkerEngine);
@@ -57,13 +57,13 @@ export function registerHandlers(bot: Bot) {
         { parse_mode: "Markdown" }
       );
     } else {
-      await ctx.reply("⚠️ 사용법: `/엔진 agy` 또는 `/엔진 cursor` 또는 `/엔진 openai`", {
+      await ctx.reply("⚠️ 사용법: `/engine agy` 또는 `/engine cursor` 또는 `/engine openai`", {
         parse_mode: "Markdown",
       });
     }
   });
 
-  bot.command(["모델", "model"], async (ctx) => {
+  bot.command("model", async (ctx) => {
     const model = ctx.match?.trim();
     if (model) {
       const updated = settingsManager.setModel(model);
@@ -76,13 +76,13 @@ export function registerHandlers(bot: Bot) {
       await ctx.reply(
         `📌 현재 모델: \`${current.model}\` (공급사: ${current.engine.toUpperCase()})\n\n` +
           `💡 **추천 모델 목록**:\n• ${presets}\n\n` +
-          `변경하려면: \`/모델 <원하는모델명>\` 입력`,
+          `변경하려면: \`/model <원하는모델명>\` 입력`,
         { parse_mode: "Markdown" }
       );
     }
   });
 
-  bot.command(["effort", "노력"], async (ctx) => {
+  bot.command(["effort", "reasoning"], async (ctx) => {
     const effort = ctx.match?.trim().toLowerCase();
     const valid = ["low", "medium", "high", "xhigh", "max"];
     if (effort && valid.includes(effort)) {
@@ -97,7 +97,7 @@ export function registerHandlers(bot: Bot) {
     }
   });
 
-  bot.command(["모드", "mode"], async (ctx) => {
+  bot.command("mode", async (ctx) => {
     const mode = ctx.match?.trim().toLowerCase();
     if (mode === "plan" || mode === "auto") {
       const updated = settingsManager.setMode(mode as any);
@@ -105,7 +105,7 @@ export function registerHandlers(bot: Bot) {
         parse_mode: "Markdown",
       });
     } else {
-      await ctx.reply("⚠️ 사용법: `/모드 plan` 또는 `/모드 auto`", {
+      await ctx.reply("⚠️ 사용법: `/mode plan` 또는 `/mode auto`", {
         parse_mode: "Markdown",
       });
     }
