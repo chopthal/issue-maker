@@ -139,32 +139,40 @@ def stop_bot():
             pass
 
 
+def is_bot_running():
+    with process_lock:
+        return bot_process is not None and bot_process.poll() is None
+
+
 def watch_bot_process():
     """봇이 /restart(exit 42)로 종료되면 자동 재기동한다."""
     global bot_process
     while not watcher_stop.is_set():
-        time.sleep(1)
-        with process_lock:
-            proc = bot_process
-            suppressed = suppress_auto_restart
-
-        if proc is None:
-            continue
-
-        code = proc.poll()
-        if code is None:
-            continue
-
-        with process_lock:
-            if bot_process is proc:
-                bot_process = None
-
-        if code == RESTART_EXIT_CODE and not suppressed:
-            log_launcher("텔레그램 /restart 감지 — 봇을 재시작합니다.")
+        try:
             time.sleep(1)
-            start_bot()
-        else:
-            log_launcher(f"봇 프로세스가 종료되었습니다. (code={code})")
+            with process_lock:
+                proc = bot_process
+                suppressed = suppress_auto_restart
+
+            if proc is None:
+                continue
+
+            code = proc.poll()
+            if code is None:
+                continue
+
+            with process_lock:
+                if bot_process is proc:
+                    bot_process = None
+
+            if code == RESTART_EXIT_CODE and not suppressed:
+                log_launcher("텔레그램 /restart 감지 — 봇을 재시작합니다.")
+                time.sleep(1)
+                start_bot()
+            else:
+                log_launcher(f"봇 프로세스가 종료되었습니다. (code={code})")
+        except Exception as e:
+            log_launcher(f"감시 루프 오류: {e}")
 
 
 def restart_bot(icon=None, item=None):
@@ -208,7 +216,7 @@ def main():
     watcher.start()
 
     menu = pystray.Menu(
-        pystray.MenuItem("Issue-Maker Bot (실행 중)", None, enabled=False),
+        pystray.MenuItem(lambda item: f"Issue-Maker Bot ({'실행 중' if is_bot_running() else '중지됨'})", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("📋 로그 보기 (bot.log)", open_log, default=True),
         pystray.MenuItem("⚙️ .env 설정 열기", open_env),
