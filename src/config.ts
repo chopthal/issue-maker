@@ -19,6 +19,14 @@ export interface AppConfig {
   };
   storage: {
     dataDir: string;
+    /** 체크포인트 이하(이슈화분) 중 최근 N개는 답장 재요약용으로 유지 */
+    keepBelowCheckpointCount: number;
+    /** 체크포인트 이하 중 최근 N일 이내도 유지 (개수 버퍼와 합집합) */
+    keepBelowCheckpointDays: number;
+    /** 전체 메시지 상한. 초과 시 이슈화분만 추가 축소 (미요약은 유지) */
+    maxTotalMessages: number;
+    /** saveMessage N회마다 보조 prune 점검 */
+    pruneEveryNSaves: number;
   };
 }
 
@@ -40,5 +48,9 @@ export const config: AppConfig = {
   },
   storage: {
     dataDir: path.resolve(process.cwd(), "data"),
+    keepBelowCheckpointCount: 200,
+    keepBelowCheckpointDays: 7,
+    maxTotalMessages: 5000,
+    pruneEveryNSaves: 50,
   },
 };

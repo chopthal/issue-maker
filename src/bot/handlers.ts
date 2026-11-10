@@ -27,6 +27,7 @@ export function registerHandlers(bot: Bot) {
         `• **(답장으로)** \`/summary\` 또는 \`/preview\`: 지정 구간만 처리\n` +
         `• \`/cancel\`: 진행 중 작업 취소\n` +
         `• \`/checkpoint\` / \`/resetcheckpoint\`: 워터마크 확인·초기화\n\n` +
+        `ℹ️ 이슈로 등록된 오래된 로컬 대화는 자동 정리됩니다. (최근 버퍼만 답장 재요약용으로 유지)\n\n` +
         `🛠️ **모델·상태**:\n` +
         `• \`/settings\` / \`/model\`: 모델 변경\n` +
         `• \`/status\` \`/ping\` \`/chatid\` \`/last\` \`/restart\``,
@@ -42,7 +43,10 @@ export function registerHandlers(bot: Bot) {
 
   bot.command(["resetcheckpoint", "clearcheckpoint"], async (ctx) => {
     store.setCheckpoint(ctx.chat.id, 0);
-    await ctx.reply("🔄 체크포인트가 초기화되었습니다. 다음 /summary 시 전체 대화가 대상이 됩니다.");
+    await ctx.reply(
+      "🔄 체크포인트가 초기화되었습니다. 다음 /summary 시 로컬에 남아 있는 대화가 대상이 됩니다.\n" +
+        "(이미 이슈화된 뒤 자동 정리된 오래된 메시지는 포함되지 않을 수 있습니다.)"
+    );
   });
 
   // 3. 설정
@@ -376,6 +380,12 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
       throwIfAborted(signal);
 
       store.setCheckpoint(chatId, currentMsgId);
+      const pruneResult = store.pruneMessages(chatId);
+      if (pruneResult.removed > 0) {
+        console.log(
+          `[Storage] chat ${chatId} prune: removed ${pruneResult.removed}, remaining ${pruneResult.remaining}`
+        );
+      }
 
       lastIssueStore.save(chatId, {
         title: pipelineResult.issue.title,

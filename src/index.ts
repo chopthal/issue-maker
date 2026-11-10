@@ -7,6 +7,7 @@ import { Bot } from "grammy";
 import { config } from "./config.js";
 import { registerHandlers } from "./bot/handlers.js";
 import { settingsManager } from "./storage/settings.js";
+import { store } from "./storage/db.js";
 
 async function main() {
   console.log("==========================================");
@@ -107,6 +108,16 @@ async function main() {
       `📦 GitHub Target Repo: ${config.github.owner}/${config.github.repo || "(미설정 - 로컬저장 모드)"}`
     );
     console.log("------------------------------------------");
+
+    const pruneResult = store.pruneMessages();
+    if (pruneResult.removed > 0) {
+      console.log(
+        `[Storage] startup prune: removed ${pruneResult.removed}, remaining ${pruneResult.remaining}`
+      );
+    } else {
+      console.log(`[Storage] startup prune: no change (remaining ${pruneResult.remaining})`);
+    }
+
     console.log("✅ 봇이 활성화되었습니다. 텔레그램에서 메시지를 수신 대기합니다.");
 
     sendStartupNotification().catch((err) => {
