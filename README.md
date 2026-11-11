@@ -10,7 +10,7 @@
    * 기획자/개발자의 대화·스크린샷(사진)을 취합해 AGY가 스펙 이슈로 정리.
    * 사진은 요약 시에만 모델(vision)로 전달하고, Issue 본문에는 **텍스트 설명만** 반영 (이미지 첨부 없음).
    * 잡담 필터링 + Decision Log + Acceptance Criteria + Tasks 체크리스트.
-   * 등록 완료 후 **T3 Code 원클릭 프롬프트** (`gh issue view N 파악 및 논의`) 회신.
+   * 등록 완료 후 **T3 Code 원클릭 프롬프트** (`gh issue view N 파악 및 논의. 답변은 한국어로.`) 회신.
 2. **실시간 모델 변경 (AGY 전용)**:
    * `/settings` 또는 `/model`로 Gemini 3.8 Flash / Gemini 4 Argon (low·medium·high) 선택.
 3. **Windows 시스템 트레이 & 무인 자동 시작**:

@@ -480,7 +480,7 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
         issueLink = `로컬 저장됨: ${ghResult.localSavedPath || "경로 없음"}`;
       }
 
-      const t3Prompt = `${issueRef} 파악 및 논의`;
+      const t3Prompt = `${issueRef} 파악 및 논의. 답변은 한국어로.`;
 
       const responseText =
         `🎉 **이슈 정리 및 등록 완료!** (${Math.round(pipelineResult.processingTimeMs / 1000)}초 소요)\n\n` +
