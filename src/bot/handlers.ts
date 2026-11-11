@@ -25,6 +25,8 @@ export function registerHandlers(bot: Bot) {
         `• \`/summary\` 또는 \`여기까지 정리\`: 체크포인트 이후 대화 → Issue 등록\n` +
         `• \`/preview\`: Issue 등록 없이 초안만 확인\n` +
         `• **(답장으로)** \`/summary\` 또는 \`/preview\`: 지정 구간만 처리\n` +
+        `• **(답장으로)** \`/exclude\`: 해당 메시지를 이슈 대상에서 제외/해제(토글)\n` +
+        `• \`/excludes\` / \`/clearexclude\`: 제외 목록 확인·초기화\n` +
         `• \`/cancel\`: 진행 중 작업 취소\n` +
         `• \`/checkpoint\` / \`/resetcheckpoint\`: 워터마크 확인·초기화\n\n` +
         `ℹ️ 이슈로 등록된 오래된 로컬 대화는 자동 정리됩니다. (최근 버퍼만 답장 재요약용으로 유지)\n\n` +
@@ -47,6 +49,54 @@ export function registerHandlers(bot: Bot) {
       "🔄 체크포인트가 초기화되었습니다. 다음 /summary 시 로컬에 남아 있는 대화가 대상이 됩니다.\n" +
         "(이미 이슈화된 뒤 자동 정리된 오래된 메시지는 포함되지 않을 수 있습니다.)"
     );
+  });
+
+  // 2-1. 제외 목록
+  bot.command("exclude", async (ctx) => {
+    if (!ctx.chat || !ctx.message) return;
+
+    const replyToId = ctx.message.reply_to_message?.message_id;
+    if (!replyToId) {
+      await ctx.reply(
+        "ℹ️ 제외할 메시지에 **답장**한 뒤 `/exclude`를 입력하세요.\n" +
+          "같은 메시지에 다시 치면 제외가 해제됩니다.\n" +
+          "목록 확인: `/excludes` / 초기화: `/clearexclude`"
+      );
+      return;
+    }
+
+    const { added, ids } = store.toggleExclude(ctx.chat.id, replyToId);
+    if (added) {
+      await ctx.reply(
+        `🚫 메시지 #${replyToId}을(를) 이슈 대상에서 제외했습니다.\n` +
+          `현재 제외: ${formatExcludeIds(ids)} (${ids.length}개)`
+      );
+    } else {
+      await ctx.reply(
+        `✅ 메시지 #${replyToId} 제외를 해제했습니다.\n` +
+          `현재 제외: ${formatExcludeIds(ids)} (${ids.length}개)`
+      );
+    }
+  });
+
+  bot.command(["excludes", "listexclude"], async (ctx) => {
+    if (!ctx.chat) return;
+    const ids = store.getExcludedMessageIds(ctx.chat.id);
+    if (ids.length === 0) {
+      await ctx.reply("📭 현재 제외된 메시지가 없습니다.");
+      return;
+    }
+    await ctx.reply(`🚫 제외 목록 (${ids.length}개):\n${formatExcludeIds(ids)}`);
+  });
+
+  bot.command(["clearexclude", "clearexcludes"], async (ctx) => {
+    if (!ctx.chat) return;
+    const removed = store.clearExcludes(ctx.chat.id);
+    if (removed === 0) {
+      await ctx.reply("ℹ️ 비울 제외 목록이 없습니다.");
+      return;
+    }
+    await ctx.reply(`🔄 제외 목록 ${removed}개를 초기화했습니다.`);
   });
 
   // 3. 설정
@@ -102,11 +152,14 @@ export function registerHandlers(bot: Bot) {
         : "(미설정 - 로컬저장 모드)";
     const busy = jobManager.isActive(ctx.chat.id) ? "진행 중" : "대기";
 
+    const excludeCount = store.getExcludedMessageIds(ctx.chat.id).length;
+
     await ctx.reply(
       `📊 **Issue-Maker 상태**\n\n` +
         `• 모델: \`${s.model}\` (AGY / ${s.mode})\n` +
         `• 저장소: \`${repo}\`\n` +
         `• 체크포인트: \`#${cp || 0}\`\n` +
+        `• 제외 목록: ${excludeCount}개\n` +
         `• 업타임: ${formatUptime()}\n` +
         `• 이 방 작업: ${busy}`,
       { parse_mode: "Markdown" }
@@ -296,15 +349,27 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
   const currentSettings = settingsManager.getSettings();
   const isPreview = mode === "preview";
 
-  const { messages, fromMessageId, mode: rangeMode } = store.getMessagesForSummary(
+  const { messages: rangedMessages, fromMessageId, mode: rangeMode } = store.getMessagesForSummary(
     chatId,
     currentMsgId,
     replyToId
   );
 
-  if (messages.length === 0) {
+  if (rangedMessages.length === 0) {
     await ctx.reply(
       `⚠️ 정리할 새로운 대화 내용이 없습니다.\n(기준 메시지 ID: #${fromMessageId || 0} 이후 대화 없음)`
+    );
+    return;
+  }
+
+  const excludedIds = new Set(store.getExcludedMessageIds(chatId));
+  const excludedInRange = rangedMessages.filter((m) => excludedIds.has(m.id));
+  const messages = rangedMessages.filter((m) => !excludedIds.has(m.id));
+
+  if (messages.length === 0) {
+    await ctx.reply(
+      `⚠️ 구간 메시지 ${rangedMessages.length}개가 모두 제외되어 정리할 내용이 없습니다.\n` +
+        `제외 해제: 해당 메시지에 답장 후 \`/exclude\` / 전체 초기화: \`/clearexclude\``
     );
     return;
   }
@@ -313,11 +378,16 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
     rangeMode === "reply"
       ? `답장 지정 구간 (#${fromMessageId} ~ #${currentMsgId - 1})`
       : `체크포인트 이후 구간 (#${fromMessageId} ~ #${currentMsgId - 1})`;
+  const excludeDescription =
+    excludedInRange.length > 0
+      ? `• 제외: ${excludedInRange.length}개 (${formatExcludeIds(excludedInRange.map((m) => m.id))})\n`
+      : "";
 
   const pipelineLabel = isPreview ? "초안 미리보기" : "이슈 생성";
   const statusMsg = await ctx.reply(
     `🔄 **[${pipelineLabel} 파이프라인 가동]**\n` +
       `• 대상: ${rangeDescription} (${messages.length}개)\n` +
+      excludeDescription +
       `• 모델: \`${currentSettings.model}\`\n\n` +
       `⏳ 분석 중... (\`/cancel\`로 취소 가능)`,
     { parse_mode: "Markdown" }
@@ -346,7 +416,10 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
           await ctx.api.editMessageText(
             chatId,
             statusMsg.message_id,
-            `🔄 **[${pipelineLabel} 파이프라인 가동]**\n• 대상: ${rangeDescription} (${messages.length}개)\n\n⏳ ${step}`
+            `🔄 **[${pipelineLabel} 파이프라인 가동]**\n` +
+              `• 대상: ${rangeDescription} (${messages.length}개)\n` +
+              excludeDescription +
+              `\n⏳ ${step}`
           );
         } catch {}
       },
@@ -364,7 +437,7 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
           `------------------------------------\n` +
           `${pipelineResult.issue.body}\n` +
           `------------------------------------\n` +
-          `ℹ️ Issue는 등록되지 않았고, 체크포인트도 변경되지 않았습니다.\n` +
+          `ℹ️ Issue는 등록되지 않았고, 체크포인트·제외 목록도 변경되지 않았습니다.\n` +
           `등록하려면 \`/summary\`를 사용하세요.`
       );
 
@@ -380,6 +453,7 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
       throwIfAborted(signal);
 
       store.setCheckpoint(chatId, currentMsgId);
+      store.clearExcludes(chatId);
       const pruneResult = store.pruneMessages(chatId);
       if (pruneResult.removed > 0) {
         console.log(
@@ -418,7 +492,8 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
         `\`\`\`text\n${t3Prompt}\n\`\`\`\n` +
         `*(위 블록을 터치하여 복사 후 T3 Code에 그대로 붙여넣으세요)*\n` +
         `------------------------------------\n` +
-        `📍 다음 정리 시점(체크포인트)이 #${currentMsgId}로 업데이트되었습니다.`;
+        `📍 다음 정리 시점(체크포인트)이 #${currentMsgId}로 업데이트되었습니다.\n` +
+        `🚫 제외 목록은 초기화되었습니다.`;
 
       await ctx.api.editMessageText(chatId, statusMsg.message_id, responseText, {
         parse_mode: "Markdown",
@@ -518,6 +593,11 @@ function cleanupTempDir(dir: string): void {
 
 function escapeMarkdown(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+}
+
+function formatExcludeIds(ids: number[]): string {
+  if (ids.length === 0) return "(없음)";
+  return ids.map((id) => `#${id}`).join(", ");
 }
 
 /** Telegram 메시지 4096자 제한에 맞춤 */

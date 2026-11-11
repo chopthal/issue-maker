@@ -62,8 +62,11 @@ powershell -ExecutionPolicy Bypass -File "scripts\register-startup.ps1"
 | 명령어 | 설명 |
 |---|---|
 | `/summary` or `여기까지 정리` | 직전 체크포인트 이후의 대화를 취합하여 원샷 이슈 생성 |
-| `/preview` | Issue 등록 없이 초안만 텔레그램에 표시 (체크포인트 유지) |
+| `/preview` | Issue 등록 없이 초안만 텔레그램에 표시 (체크포인트·제외 목록 유지) |
 | **(답장으로) `/summary` `/preview`** | 답장한 메시지부터 현재까지 구간만 처리 |
+| **(답장으로) `/exclude`** | 해당 메시지를 이슈 대상에서 제외/해제 (토글) |
+| `/excludes` | 현재 제외 메시지 목록 조회 |
+| `/clearexclude` | 제외 목록 초기화 |
 | `/cancel` | 진행 중인 `/summary` 또는 `/preview` 취소 |
 | `/checkpoint` | 현재 기록된 마지막 체크포인트 메시지 ID 조회 |
 | `/resetcheckpoint` | 체크포인트를 초기화하여 전체 대화를 대상으로 설정 |

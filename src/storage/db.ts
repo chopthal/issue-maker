@@ -66,12 +66,14 @@ export class MessageStore {
   private dataDir: string;
   private messagesFile: string;
   private stateFile: string;
+  private excludesFile: string;
   private saveCount = 0;
 
   constructor() {
     this.dataDir = config.storage.dataDir;
     this.messagesFile = path.join(this.dataDir, "messages.json");
     this.stateFile = path.join(this.dataDir, "checkpoints.json");
+    this.excludesFile = path.join(this.dataDir, "excludes.json");
 
     this.initDirectories();
   }
@@ -85,6 +87,9 @@ export class MessageStore {
     }
     if (!fs.existsSync(this.stateFile)) {
       fs.writeFileSync(this.stateFile, JSON.stringify({}, null, 2), "utf-8");
+    }
+    if (!fs.existsSync(this.excludesFile)) {
+      fs.writeFileSync(this.excludesFile, JSON.stringify({}, null, 2), "utf-8");
     }
   }
 
@@ -139,6 +144,71 @@ export class MessageStore {
       lastCheckpointTime: new Date().toISOString(),
     };
     this.writeAllCheckpoints(states);
+  }
+
+  private readAllExcludes(): Record<string, number[]> {
+    try {
+      const data = fs.readFileSync(this.excludesFile, "utf-8");
+      const parsed = JSON.parse(data) as Record<string, unknown>;
+      const result: Record<string, number[]> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (!Array.isArray(value)) continue;
+        result[key] = value
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0)
+          .sort((a, b) => a - b);
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  private writeAllExcludes(excludes: Record<string, number[]>): void {
+    fs.writeFileSync(this.excludesFile, JSON.stringify(excludes, null, 2), "utf-8");
+  }
+
+  /** 채팅별 제외 메시지 ID 목록 (오름차순) */
+  public getExcludedMessageIds(chatId: number): number[] {
+    return this.readAllExcludes()[chatId.toString()] || [];
+  }
+
+  /**
+   * 제외 목록 토글.
+   * 이미 있으면 제거하고, 없으면 추가한다.
+   */
+  public toggleExclude(chatId: number, messageId: number): { added: boolean; ids: number[] } {
+    const all = this.readAllExcludes();
+    const key = chatId.toString();
+    const current = new Set(all[key] || []);
+    let added = false;
+
+    if (current.has(messageId)) {
+      current.delete(messageId);
+    } else {
+      current.add(messageId);
+      added = true;
+    }
+
+    const ids = [...current].sort((a, b) => a - b);
+    if (ids.length === 0) {
+      delete all[key];
+    } else {
+      all[key] = ids;
+    }
+    this.writeAllExcludes(all);
+    return { added, ids };
+  }
+
+  public clearExcludes(chatId: number): number {
+    const all = this.readAllExcludes();
+    const key = chatId.toString();
+    const removed = all[key]?.length || 0;
+    if (removed > 0) {
+      delete all[key];
+      this.writeAllExcludes(all);
+    }
+    return removed;
   }
 
   /**
