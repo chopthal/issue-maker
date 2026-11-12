@@ -18,22 +18,24 @@ export function registerHandlers(bot: Bot) {
   bot.command(["start", "help"], async (ctx) => {
     const s = settingsManager.getSettings();
     await ctx.reply(
-      `👋 **Issue-Maker 봇에 오신 것을 환영합니다!**\n\n` +
+      `👋 <b>Issue-Maker 봇에 오신 것을 환영합니다!</b>\n\n` +
         `기획자와 개발자가 편하게 대화를 나누시면, AGY가 개발 가능한 GitHub Issue로 자동 정리해 드립니다.\n\n` +
-        `⚙️ **현재 모델**: \`${s.model}\`\n\n` +
-        `📌 **대화 정리**:\n` +
-        `• \`/summary\` 또는 \`여기까지 정리\`: 체크포인트 이후 대화 → Issue 등록\n` +
-        `• \`/preview\`: Issue 등록 없이 초안만 확인\n` +
-        `• **(답장으로)** \`/summary\` 또는 \`/preview\`: 지정 구간만 처리\n` +
-        `• **(답장으로)** \`/exclude\`: 해당 메시지를 이슈 대상에서 제외/해제(토글)\n` +
-        `• \`/excludes\` / \`/clearexclude\`: 제외 목록 확인·초기화\n` +
-        `• \`/cancel\`: 진행 중 작업 취소\n` +
-        `• \`/checkpoint\` / \`/resetcheckpoint\`: 워터마크 확인·초기화\n\n` +
+        `⚙️ <b>현재 모델</b>: <code>${escapeHtml(s.model)}</code>\n\n` +
+        `📌 <b>대화 정리</b>:\n` +
+        `• <code>/summary</code> 또는 <code>여기까지 정리</code>: 체크포인트 이후 대화 → Issue 등록\n` +
+        `• <code>/preview</code>: Issue 등록 없이 초안만 확인\n` +
+        `• <b>(답장으로)</b> <code>/summary</code> 또는 <code>/preview</code>: 지정 구간만 처리\n` +
+        `• <b>(답장으로)</b> <code>/exclude</code>: 해당 메시지를 이슈 대상에서 제외/해제(토글)\n` +
+        `• <code>/excludes</code> / <code>/clearexclude</code>: 제외 목록 확인·초기화\n` +
+        `• <code>/cancel</code>: 진행 중 작업 취소\n` +
+        `• <b>전달(forward) 선별</b>: 토의방에서 필요한 메시지만 여러 개 선택 → 이 방(또는 봇 1:1)으로 전달 → <code>/summary</code>\n` +
+        `  (원 작성자·시각 유지. ⚠️ '보낸 사람 이름 숨기기'로 전달하면 작성자 정보가 사라집니다)\n` +
+        `• <code>/checkpoint</code> / <code>/from</code> / <code>/resetcheckpoint</code>: 시작 지점 확인·지정(답장)·초기화\n\n` +
         `ℹ️ 이슈로 등록된 오래된 로컬 대화는 자동 정리됩니다. (최근 버퍼만 답장 재요약용으로 유지)\n\n` +
-        `🛠️ **모델·상태**:\n` +
-        `• \`/settings\` / \`/model\`: 모델 변경\n` +
-        `• \`/status\` \`/ping\` \`/chatid\` \`/last\` \`/restart\``,
-      { parse_mode: "Markdown" }
+        `🛠️ <b>모델·상태</b>:\n` +
+        `• <code>/settings</code> / <code>/model</code>: 모델 변경\n` +
+        `• <code>/status</code> <code>/ping</code> <code>/chatid</code> <code>/last</code> <code>/restart</code>`,
+      { parse_mode: "HTML" }
     );
   });
 
@@ -41,6 +43,39 @@ export function registerHandlers(bot: Bot) {
   bot.command("checkpoint", async (ctx) => {
     const cp = store.getCheckpoint(ctx.chat.id);
     await ctx.reply(`📍 현재 저장된 마지막 체크포인트 메시지 ID: #${cp || "없음(처음부터)"}`);
+  });
+
+  bot.command(["from", "setcheckpoint"], async (ctx) => {
+    if (!ctx.chat || !ctx.message) return;
+
+    const replyTo = ctx.message.reply_to_message;
+    if (!replyTo) {
+      await ctx.reply(
+        "ℹ️ 요약을 시작하고 싶은 메시지에 <b>답장(Reply)</b>한 뒤 <code>/from</code>을 입력하세요.\n" +
+          "해당 메시지부터 다음 <code>/summary</code> 대상에 포함됩니다.",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+
+    const targetMsgId = replyTo.message_id;
+    // checkpoint는 '이 ID 이하(<=)는 이미 처리 완료'를 의미하므로,
+    // 답장한 메시지가 다음 요약(id > checkpoint)에 포함되도록 targetMsgId - 1로 설정
+    const newCheckpoint = Math.max(0, targetMsgId - 1);
+    store.setCheckpoint(ctx.chat.id, newCheckpoint);
+
+    const sender =
+      replyTo.forward_origin
+        ? getForwardOriginSender(replyTo.forward_origin)
+        : replyTo.from?.first_name || replyTo.from?.username || "알 수 없음";
+    const snippet = (replyTo.text || replyTo.caption || "(미디어 메시지)").slice(0, 40);
+
+    await ctx.reply(
+      `📍 <b>요약 시작 지점 설정 완료</b>\n` +
+        `• 기준 메시지: #${targetMsgId} (<b>${escapeHtml(sender)}</b>: ${escapeHtml(snippet)})\n` +
+        `• 다음 <code>/summary</code> 또는 <code>/preview</code> 시 <b>이 메시지부터 포함</b>되어 정리됩니다.`,
+      { parse_mode: "HTML" }
+    );
   });
 
   bot.command(["resetcheckpoint", "clearcheckpoint"], async (ctx) => {
@@ -108,17 +143,17 @@ export function registerHandlers(bot: Bot) {
     const model = ctx.match?.trim();
     if (model) {
       const updated = settingsManager.setModel(model);
-      await ctx.reply(`✅ 모델이 **\`${updated.model}\`**로 변경되었습니다.`, {
-        parse_mode: "Markdown",
+      await ctx.reply(`✅ 모델이 <b><code>${escapeHtml(updated.model)}</code></b>로 변경되었습니다.`, {
+        parse_mode: "HTML",
       });
     } else {
       const current = settingsManager.getSettings();
-      const presets = SettingsManager.MODELS.join("\n• ");
+      const presets = SettingsManager.MODELS.map((m) => `• <code>${escapeHtml(m)}</code>`).join("\n");
       await ctx.reply(
-        `📌 현재 모델: \`${current.model}\`\n\n` +
-          `💡 **선택 가능 모델**:\n• ${presets}\n\n` +
-          `변경: \`/model <모델명>\` 또는 \`/settings\``,
-        { parse_mode: "Markdown" }
+        `📌 현재 모델: <code>${escapeHtml(current.model)}</code>\n\n` +
+          `💡 <b>선택 가능 모델</b>:\n${presets}\n\n` +
+          `변경: <code>/model &lt;모델명&gt;</code> 또는 <code>/settings</code>`,
+        { parse_mode: "HTML" }
       );
     }
   });
@@ -155,14 +190,14 @@ export function registerHandlers(bot: Bot) {
     const excludeCount = store.getExcludedMessageIds(ctx.chat.id).length;
 
     await ctx.reply(
-      `📊 **Issue-Maker 상태**\n\n` +
-        `• 모델: \`${s.model}\` (AGY / ${s.mode})\n` +
-        `• 저장소: \`${repo}\`\n` +
-        `• 체크포인트: \`#${cp || 0}\`\n` +
+      `📊 <b>Issue-Maker 상태</b>\n\n` +
+        `• 모델: <code>${escapeHtml(s.model)}</code> (AGY / ${escapeHtml(s.mode)})\n` +
+        `• 저장소: <code>${escapeHtml(repo)}</code>\n` +
+        `• 체크포인트: <code>#${cp || 0}</code>\n` +
         `• 제외 목록: ${excludeCount}개\n` +
         `• 업타임: ${formatUptime()}\n` +
         `• 이 방 작업: ${busy}`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "HTML" }
     );
   });
 
@@ -175,18 +210,18 @@ export function registerHandlers(bot: Bot) {
     }
 
     const link = last.issueUrl
-      ? `[#${last.issueNumber}](${last.issueUrl})`
+      ? `<a href="${escapeHtml(last.issueUrl)}">#${last.issueNumber}</a>`
       : last.localSavedPath
-        ? `로컬: \`${path.basename(last.localSavedPath)}\``
+        ? `로컬: <code>${escapeHtml(path.basename(last.localSavedPath))}</code>`
         : "(링크 없음)";
 
     await ctx.reply(
-      `📌 **마지막 이슈**\n\n` +
-        `• 제목: ${escapeMarkdown(last.title)}\n` +
+      `📌 <b>마지막 이슈</b>\n\n` +
+        `• 제목: ${escapeHtml(last.title)}\n` +
         `• 링크: ${link}\n` +
-        `• 모델: \`${last.model}\`\n` +
-        `• 시각: ${last.createdAt}`,
-      { parse_mode: "Markdown" }
+        `• 모델: <code>${escapeHtml(last.model)}</code>\n` +
+        `• 시각: ${escapeHtml(last.createdAt)}`,
+      { parse_mode: "HTML" }
     );
   });
 
@@ -231,7 +266,9 @@ export function registerHandlers(bot: Bot) {
 
   bot.on("message:text", async (ctx, next) => {
     const text = ctx.message.text.trim();
-    const isTrigger = triggerWords.some((w) => text.startsWith(w) || text === w);
+    // 전달된 메시지 안의 "/summary", "여기까지 정리" 등은 트리거가 아닌 대화 내용으로 취급
+    const isTrigger =
+      !ctx.message.forward_origin && triggerWords.some((w) => text.startsWith(w) || text === w);
 
     if (isTrigger) {
       await handleSummarize(ctx, "publish");
@@ -245,7 +282,9 @@ export function registerHandlers(bot: Bot) {
   // 7. 미디어 수신 — 로컬 영구 저장 없이 메타만 기록
   bot.on(["message:photo", "message:document", "message:voice"], async (ctx, next) => {
     const caption = ctx.message.caption || "";
-    const isTrigger = triggerWords.some((w) => caption.startsWith(w) || caption === w);
+    const isTrigger =
+      !ctx.message.forward_origin &&
+      triggerWords.some((w) => caption.startsWith(w) || caption === w);
 
     if (isTrigger) {
       await handleSummarize(ctx, "publish");
@@ -259,8 +298,8 @@ export function registerHandlers(bot: Bot) {
 
 function getSettingsText(s: RuntimeWorkerSettings): string {
   return (
-    `⚙️ **Issue-Maker 모델 설정** (AGY 전용)\n\n` +
-    `• **현재 모델**: \`${s.model}\`\n\n` +
+    `⚙️ <b>Issue-Maker 모델 설정</b> (AGY 전용)\n\n` +
+    `• <b>현재 모델</b>: <code>${escapeHtml(s.model)}</code>\n\n` +
     `아래에서 모델을 선택하세요. (effort는 모델명에 포함)`
   );
 }
@@ -278,7 +317,7 @@ function getMainSettingsKeyboard(s: RuntimeWorkerSettings): InlineKeyboard {
 async function sendSettingsMenu(ctx: Context) {
   const s = settingsManager.getSettings();
   await ctx.reply(getSettingsText(s), {
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     reply_markup: getMainSettingsKeyboard(s),
   });
 }
@@ -287,20 +326,42 @@ async function editSettingsMenu(ctx: Context) {
   const s = settingsManager.getSettings();
   try {
     await ctx.editMessageText(getSettingsText(s), {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: getMainSettingsKeyboard(s),
     });
   } catch {}
+}
+
+type ForwardOrigin = NonNullable<NonNullable<Context["message"]>["forward_origin"]>;
+
+/** 전달 메시지의 원 작성자 표시 이름 (계정 연결 비공개 사용자는 표시 이름만 제공됨) */
+function getForwardOriginSender(origin: ForwardOrigin): string {
+  switch (origin.type) {
+    case "user": {
+      const u = origin.sender_user;
+      const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ");
+      return fullName || u.username || `User_${u.id}`;
+    }
+    case "hidden_user":
+      return origin.sender_user_name || "Unknown";
+    case "chat":
+      return origin.author_signature || origin.sender_chat.title || "Chat";
+    case "channel":
+      return origin.author_signature || origin.chat.title || "Channel";
+  }
 }
 
 async function saveIncomingMessage(ctx: Context) {
   if (!ctx.message || !ctx.chat) return;
 
   const msg = ctx.message;
-  const sender =
-    msg.from?.first_name ||
-    msg.from?.username ||
-    `User_${msg.from?.id || "unknown"}`;
+  const origin = msg.forward_origin;
+  const sender = origin
+    ? getForwardOriginSender(origin)
+    : msg.from?.first_name || msg.from?.username || `User_${msg.from?.id || "unknown"}`;
+  const senderId =
+    origin?.type === "user" ? origin.sender_user.id : origin ? 0 : msg.from?.id || 0;
+  const sentAt = origin ? origin.date : msg.date;
 
   let hasMedia = false;
   let mediaKind: MediaKind | undefined;
@@ -326,11 +387,13 @@ async function saveIncomingMessage(ctx: Context) {
     id: msg.message_id,
     chatId: ctx.chat.id,
     sender,
-    senderId: msg.from?.id || 0,
-    date: new Date(msg.date * 1000).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+    senderId,
+    date: new Date(sentAt * 1000).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
     text: msg.text || "",
     caption: msg.caption,
-    replyToMessageId: msg.reply_to_message?.message_id,
+    // 전달된 메시지의 답장 관계는 원본 방 기준이 아니므로 기록하지 않음
+    replyToMessageId: origin ? undefined : msg.reply_to_message?.message_id,
+    isForwarded: origin ? true : undefined,
     hasMedia,
     mediaKind,
     telegramFileId,
@@ -384,14 +447,19 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
       : "";
 
   const pipelineLabel = isPreview ? "초안 미리보기" : "이슈 생성";
-  const statusMsg = await ctx.reply(
-    `🔄 **[${pipelineLabel} 파이프라인 가동]**\n` +
-      `• 대상: ${rangeDescription} (${messages.length}개)\n` +
-      excludeDescription +
-      `• 모델: \`${currentSettings.model}\`\n\n` +
-      `⏳ 분석 중... (\`/cancel\`로 취소 가능)`,
-    { parse_mode: "Markdown" }
-  );
+  const initialText =
+    `🔄 <b>[${escapeHtml(pipelineLabel)} 파이프라인 가동]</b>\n` +
+    `• 대상: ${escapeHtml(rangeDescription)} (${messages.length}개)\n` +
+    (excludeDescription ? `• 제외: ${excludedInRange.length}개 (${escapeHtml(formatExcludeIds(excludedInRange.map((m) => m.id)))})\n` : "") +
+    `• 모델: <code>${escapeHtml(currentSettings.model)}</code>\n\n` +
+    `⏳ 분석 중... (<code>/cancel</code>로 취소 가능)`;
+
+  let statusMsg;
+  try {
+    statusMsg = await ctx.reply(initialText, { parse_mode: "HTML" });
+  } catch {
+    statusMsg = await ctx.reply(initialText);
+  }
 
   const controller = jobManager.start(chatId);
   const signal = controller.signal;
@@ -412,16 +480,14 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
     const pipelineResult = await runSynthesisPipeline(
       formattedConversation,
       async (step) => {
-        try {
-          await ctx.api.editMessageText(
-            chatId,
-            statusMsg.message_id,
-            `🔄 **[${pipelineLabel} 파이프라인 가동]**\n` +
-              `• 대상: ${rangeDescription} (${messages.length}개)\n` +
-              excludeDescription +
-              `\n⏳ ${step}`
-          );
-        } catch {}
+        const stepText =
+          `🔄 <b>[${escapeHtml(pipelineLabel)} 파이프라인 가동]</b>\n` +
+          `• 대상: ${escapeHtml(rangeDescription)} (${messages.length}개)\n` +
+          (excludeDescription ? `• 제외: ${excludedInRange.length}개 (${escapeHtml(formatExcludeIds(excludedInRange.map((m) => m.id)))})\n` : "") +
+          `\n⏳ ${escapeHtml(step)}`;
+        await safeEditMessageText(ctx, chatId, statusMsg.message_id, stepText, {
+          parse_mode: "HTML",
+        });
       },
       images,
       signal
@@ -430,19 +496,40 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
     throwIfAborted(signal);
 
     if (isPreview) {
-      const previewText = truncateTelegramMessage(
-        `👀 **초안 미리보기** (${Math.round(pipelineResult.processingTimeMs / 1000)}초)\n` +
-          `⚙️ 모델: \`${pipelineResult.model}\`\n` +
-          `📌 제목: ${escapeMarkdown(pipelineResult.issue.title)}\n\n` +
-          `------------------------------------\n` +
-          `${pipelineResult.issue.body}\n` +
-          `------------------------------------\n` +
-          `ℹ️ Issue는 등록되지 않았고, 체크포인트·제외 목록도 변경되지 않았습니다.\n` +
-          `등록하려면 \`/summary\`를 사용하세요.`
-      );
+      const header =
+        `👀 <b>초안 미리보기</b> (${Math.round(pipelineResult.processingTimeMs / 1000)}초)\n` +
+        `⚙️ 모델: <code>${escapeHtml(pipelineResult.model)}</code>\n` +
+        `📌 제목: <b>${escapeHtml(pipelineResult.issue.title)}</b>\n\n` +
+        `------------------------------------\n`;
+      const footer =
+        `\n------------------------------------\n` +
+        `ℹ️ Issue는 등록되지 않았고, 체크포인트·제외 목록도 변경되지 않았습니다.\n` +
+        `등록하려면 <code>/summary</code>를 사용하세요.`;
 
-      await ctx.api.editMessageText(chatId, statusMsg.message_id, previewText, {
-        parse_mode: "Markdown",
+      // HTML 태그가 중간에 깨져서 파싱 오류가 발생하지 않도록 본문 텍스트 자체를 먼저 자른 후 HTML 조립
+      const rawBody = pipelineResult.issue.body || "";
+      const maxBodyChars = 2800;
+      const truncatedRawBody =
+        rawBody.length > maxBodyChars
+          ? rawBody.slice(0, maxBodyChars - 30) + "\n\n…(내용이 길어 생략됨)"
+          : rawBody;
+      let finalEscapedBody = escapeHtml(truncatedRawBody);
+
+      const maxTotalLength = 4000;
+      if (header.length + footer.length + finalEscapedBody.length + 15 > maxTotalLength) {
+        const conservativeLimit = Math.max(
+          500,
+          Math.floor((maxTotalLength - header.length - footer.length - 50) / 4)
+        );
+        finalEscapedBody = escapeHtml(
+          rawBody.slice(0, conservativeLimit) + "\n\n…(내용이 길어 생략됨)"
+        );
+      }
+
+      const previewHtml = `${header}<pre>${finalEscapedBody}</pre>${footer}`;
+
+      await safeEditMessageText(ctx, chatId, statusMsg.message_id, previewHtml, {
+        parse_mode: "HTML",
       });
     } else {
       const ghResult = await createGitHubIssue(
@@ -474,29 +561,30 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
       let issueLink = "";
       if (ghResult.success && ghResult.issueNumber) {
         issueRef = `gh issue view ${ghResult.issueNumber}`;
-        issueLink = `[GitHub Issue #${ghResult.issueNumber}](${ghResult.issueUrl})`;
+        issueLink = `<a href="${escapeHtml(ghResult.issueUrl || "")}">GitHub Issue #${ghResult.issueNumber}</a>`;
       } else {
-        issueRef = `(로컬 파일: ${ghResult.localSavedPath ? path.basename(ghResult.localSavedPath) : "생성됨"})`;
-        issueLink = `로컬 저장됨: ${ghResult.localSavedPath || "경로 없음"}`;
+        const localName = ghResult.localSavedPath ? path.basename(ghResult.localSavedPath) : "생성됨";
+        issueRef = `(로컬 파일: ${localName})`;
+        issueLink = `로컬 저장됨: <code>${escapeHtml(ghResult.localSavedPath || "경로 없음")}</code>`;
       }
 
       const t3Prompt = `${issueRef} 파악 및 논의. 답변은 한국어로.`;
 
-      const responseText =
-        `🎉 **이슈 정리 및 등록 완료!** (${Math.round(pipelineResult.processingTimeMs / 1000)}초 소요)\n\n` +
-        `📌 **제목:** ${escapeMarkdown(pipelineResult.issue.title)}\n` +
-        `⚙️ **사용 모델:** \`${pipelineResult.model}\`\n` +
-        `🔗 **링크:** ${issueLink}\n\n` +
+      const responseHtml =
+        `🎉 <b>이슈 정리 및 등록 완료!</b> (${Math.round(pipelineResult.processingTimeMs / 1000)}초 소요)\n\n` +
+        `📌 <b>제목:</b> ${escapeHtml(pipelineResult.issue.title)}\n` +
+        `⚙️ <b>사용 모델:</b> <code>${escapeHtml(pipelineResult.model)}</code>\n` +
+        `🔗 <b>링크:</b> ${issueLink}\n\n` +
         `------------------------------------\n` +
-        `📋 **[T3 Code 원클릭 프롬프트 (복사용)]**\n` +
-        `\`\`\`text\n${t3Prompt}\n\`\`\`\n` +
-        `*(위 블록을 터치하여 복사 후 T3 Code에 그대로 붙여넣으세요)*\n` +
+        `📋 <b>[T3 Code 원클릭 프롬프트 (복사용)]</b>\n` +
+        `<pre><code>${escapeHtml(t3Prompt)}</code></pre>\n` +
+        `<i>(위 블록을 터치하여 복사 후 T3 Code에 그대로 붙여넣으세요)</i>\n` +
         `------------------------------------\n` +
         `📍 다음 정리 시점(체크포인트)이 #${currentMsgId}로 업데이트되었습니다.\n` +
         `🚫 제외 목록은 초기화되었습니다.`;
 
-      await ctx.api.editMessageText(chatId, statusMsg.message_id, responseText, {
-        parse_mode: "Markdown",
+      await safeEditMessageText(ctx, chatId, statusMsg.message_id, responseHtml, {
+        parse_mode: "HTML",
       });
     }
 
@@ -505,22 +593,19 @@ async function handleSummarize(ctx: Context, mode: SummarizeMode) {
     }
   } catch (err: any) {
     if (err instanceof JobCancelledError || signal.aborted) {
-      try {
-        await ctx.api.editMessageText(
-          chatId,
-          statusMsg.message_id,
-          `🛑 **${pipelineLabel}이(가) 취소되었습니다.**`
-        );
-      } catch {}
+      const cancelText = `🛑 <b>${escapeHtml(pipelineLabel)}이(가) 취소되었습니다.</b>`;
+      await safeEditMessageText(ctx, chatId, statusMsg.message_id, cancelText, {
+        parse_mode: "HTML",
+      });
     } else {
       console.error("Pipeline failure:", err);
-      try {
-        await ctx.api.editMessageText(
-          chatId,
-          statusMsg.message_id,
-          `❌ **정리 파이프라인 실행 중 오류가 발생했습니다.**\n\n상세: ${err.message || String(err)}`
-        );
-      } catch {}
+      const errorMsg = err?.message || String(err);
+      const errorText =
+        `❌ <b>정리 파이프라인 실행 중 오류가 발생했습니다.</b>\n\n` +
+        `상세: <code>${escapeHtml(errorMsg)}</code>`;
+      await safeEditMessageText(ctx, chatId, statusMsg.message_id, errorText, {
+        parse_mode: "HTML",
+      });
       if (warnings.length > 0) {
         await ctx.reply(`⚠️ ${warnings.join(" / ")}`);
       }
@@ -593,6 +678,53 @@ function cleanupTempDir(dir: string): void {
 
 function escapeMarkdown(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+}
+
+/**
+ * HTML 특수문자(&, <, >)를 이스케이프하여 텔레그램 HTML parse_mode 파싱 에러를 방지합니다.
+ */
+export function escapeHtml(text: string | null | undefined): string {
+  if (!text) return "";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * parse_mode로 editMessageText를 시도하고,
+ * can't parse entities 에러 발생 시 parse_mode 없이 plain text로 fallback 재시도하여 파이프라인 중단을 보호합니다.
+ */
+export async function safeEditMessageText(
+  ctx: Context,
+  chatId: number,
+  messageId: number,
+  text: string,
+  options?: Parameters<typeof ctx.api.editMessageText>[3]
+): Promise<void> {
+  try {
+    await ctx.api.editMessageText(chatId, messageId, text, options);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes("message is not modified")) {
+      return;
+    }
+    if (errMsg.includes("can't parse entities") || errMsg.includes("entity")) {
+      console.warn(`[safeEditMessageText] parse error, falling back to plain text: ${errMsg}`);
+      try {
+        const { parse_mode: _pm, ...fallbackOptions } = options || {};
+        const fallbackText =
+          text.length > 4000 ? text.slice(0, 3970) + "\n\n…(내용이 길어 생략됨)" : text;
+        await ctx.api.editMessageText(chatId, messageId, fallbackText, fallbackOptions);
+        return;
+      } catch (fallbackErr: any) {
+        if (fallbackErr?.message?.includes("message is not modified")) return;
+        console.error("[safeEditMessageText] fallback to plain text failed:", fallbackErr);
+      }
+    } else {
+      console.warn("[safeEditMessageText] editMessageText failed:", errMsg);
+    }
+  }
 }
 
 function formatExcludeIds(ids: number[]): string {

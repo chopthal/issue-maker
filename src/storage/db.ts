@@ -12,6 +12,8 @@ export interface ChatMessage {
   date: string;
   text: string;
   replyToMessageId?: number;
+  /** 다른 방에서 전달(forward)된 메시지 — sender/date는 원 작성자·원 작성 시각 */
+  isForwarded?: boolean;
   hasMedia?: boolean;
   mediaKind?: MediaKind;
   /** Telegram file_id — 요약 시 임시 다운로드용 (로컬 영구 저장 없음) */
