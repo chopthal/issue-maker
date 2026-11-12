@@ -40,16 +40,18 @@ export async function runSynthesisPipeline(
     imageSection =
       `\n\n[첨부 사진 파일 — vision으로 직접 확인]\n` +
       `${lines.join("\n")}\n` +
-      `위 사진들을 확인하고 UI/화면/도식 내용을 텍스트로 요약·반영하세요. ` +
+      `위 사진들을 확인하고 UI/화면/도식 내용을 '첨부 미디어 맥락'에 짧게 텍스트로만 요약하세요. ` +
+      `대화에 없는 스펙을 추론·보강하지 마세요. ` +
       `GitHub Issue 본문에는 이미지 링크/첨부를 넣지 말고 텍스트 설명만 작성하세요.`;
   }
 
   const fullPrompt =
     `${ONESHOT_ISSUE_SYNTHESIZER_PROMPT}\n\n` +
-    `[정제할 대화 내용 원본]\n${rawConversation}` +
+    `[대화 내용 원본]\n${rawConversation}` +
     `${imageSection}\n\n` +
-    `위 대화를 분석하여 양식에 맞추어 완성형 GitHub Issue를 작성해주세요. ` +
-    `사전 계획 설명이나 진행 여부 질문을 하지 말고, 반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 시작하여 본문 전체를 원샷으로 완성하여 출력해야 합니다.`;
+    `위 대화를 분석하되, 창작·과도한 구체화 없이 양식에 맞춰 Issue를 작성하세요. ` +
+    `원문 의미를 보존하고, 이미지/문서는 맥락 설명만 추가하세요. ` +
+    `사전 계획 설명이나 진행 여부 질문을 하지 말고, 반드시 첫 줄에 '# TITLE: [타입] 제목' 형식으로 시작하여 본문 전체를 원샷으로 출력해야 합니다.`;
 
   const rawOutput = await runAgy(
     fullPrompt,
